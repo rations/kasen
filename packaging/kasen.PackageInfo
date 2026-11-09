@@ -2,14 +2,16 @@ name			kasen
 version			@VERSION@-@REVISION@
 architecture	x86_64
 summary			"Kasen - multitrack DAW on the Media Kit or JACK"
-description		"A native multitrack digital audio workstation built on the
-Interface Kit: audio and MIDI tracks, a piano-roll editor, a mixer, VST3 and LV2 effects,
-VST3 instruments, MIDI control-surface mapping, project save/load, and offline/realtime
-render. Plug-in editors are embedded natively in the FX window when a plug-in provides
-one. Runs on the RenkuOS media services (Media Kit, routed in Cortex, MIDI in PatchBay)
-or as a JACK client: choose in Options > Audio System. VST3 plug-ins such as NAMku and DRUMku
-are picked up from the system and user add-ons/vst3 directories, and LV2 plug-ins such
-as hktuner from the add-ons/lv2 directories on LV2_PATH."
+description		"Kasen is a native RenkuOS multitrack digital audio workstation
+built on the Interface Kit: audio and MIDI tracks with normal and punch-in recording,
+waveforms down to single samples, a piano-roll editor, a mixer with metering, VST3, LV2 and
+VST2 effects and instruments, MIDI control-surface mapping, .kasen project bundles, and
+offline/realtime render. Plug-in editors are embedded natively in the FX window when a
+plug-in provides one. Runs on the RenkuOS media services (Media Kit, routed in Cortex,
+MIDI in PatchBay) by default, or as a JACK client when the jack package is installed:
+choose in Options > Audio System. VST3 plug-ins such as NAMku and DRUMku are picked up
+from the system and user add-ons/media/VST3 directories, and LV2 plug-ins such as hktuner
+from add-ons/media/LV2."
 packager		"rations <ehqcar@proton.me>"
 vendor			"rations"
 copyrights {
@@ -25,7 +27,6 @@ provides {
 }
 requires {
 	haiku
-	jack
 	lv2_haiku
 	glib2
 	libsndfile

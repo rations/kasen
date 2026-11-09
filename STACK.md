@@ -56,7 +56,7 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | `namku` | 0.4.0-1 | [NAMku](https://github.com/rations/NAMku) | Neural Amp Modeler VST3 | MIT (+ MPL 2.0, Eigen) |
 | `drumku` | 0.4.0-1 | [DRUMku](https://github.com/rations/DRUMku) | MIDI drum-sampler VST3 | MIT |
 | `hktuner` | 0.4.0-1 | [hktuner](https://github.com/rations/hktuner) | chromatic tuner LV2 plug-in | MIT |
-| `kasen` | 0.6.0-1 | [kasen](https://github.com/rations/kasen) | the DAW (formerly `jackdaw`) | MIT |
+| `kasen` | 0.7.0-1 | [kasen](https://github.com/rations/kasen) | the DAW (formerly `jackdaw`) | MIT |
 | `wine` | 11.19-4 | [haiku-wine-port-jackdaw](https://github.com/rations/haiku-wine-port-jackdaw) | Wine with the Haiku patches (required by `vstbridge`) | LGPL v2.1 |
 | `vstbridge` | 0.2.0-1 | [vstbridge-haiku](https://github.com/rations/vstbridge-haiku) | Wine bridge for Windows VST2/VST3 → native stubs | GPL v3 (yabridge fork) |
 
