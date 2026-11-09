@@ -44,11 +44,11 @@ enum {
 };
 
 TrackStripView::TrackStripView(JackDawProject *project, JackDawTrack *track, const BMessenger &main)
-    : BView("track_strip", B_WILL_DRAW | B_FRAME_EVENTS), m_project(project), m_track(track),
-      m_main(main), m_name(NULL), m_arm(NULL), m_mute(NULL), m_solo(NULL), m_stereo(NULL),
-      m_fx(NULL), m_vol(NULL), m_pan(NULL), m_input(NULL), m_vu(NULL), m_state_handler(0),
-      m_routing_handler(0), m_maybe_drag(false), m_did_drag(false), m_drag_start_y(0.0f),
-      m_drag_from(-1)
+    : BView("track_strip", B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE),
+      m_project(project), m_track(track), m_main(main), m_name(NULL), m_arm(NULL), m_mute(NULL),
+      m_solo(NULL), m_stereo(NULL), m_fx(NULL), m_vol(NULL), m_pan(NULL), m_input(NULL), m_vu(NULL),
+      m_state_handler(0), m_routing_handler(0), m_maybe_drag(false), m_did_drag(false),
+      m_drag_start_y(0.0f), m_drag_from(-1)
 {
     m_name =
         new BTextControl("name", NULL, jackdaw_track_get_name(track), new BMessage(MSG_S_NAME));

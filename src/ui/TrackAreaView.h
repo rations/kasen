@@ -47,6 +47,11 @@ public:
     {
         return m_scroll_y;
     }
+    // While recording: repaint each live take from where its end was last
+    // drawn to where it is now (called on the UI tick). The take's end trails
+    // the playhead by the capture latency, so the playhead's repaint alone
+    // would leave its old right edges behind.
+    void InvalidateLiveTakes();
     // Push fresh peak values into each strip's VU (called on the UI tick).
     void UpdateMeters();
     // Rebuild every strip's input menu after a JACK port change (ports added or
@@ -150,6 +155,7 @@ private:
     WaveSampleCache m_wave_cache[4];
     unsigned long long m_wave_stamp = 0;
     float m_wave_vzoom = 1.0f;
+    std::map<JackDawTrack *, float> m_take_end_x; // live take's last drawn end (view x)
 
     // Row-height drag state (see BeginRowResize).
     int m_resize_row = -1;

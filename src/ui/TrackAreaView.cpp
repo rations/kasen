@@ -1235,6 +1235,33 @@ void TrackAreaView::DrawWaveforms(BRect lane)
     }
 }
 
+void TrackAreaView::InvalidateLiveTakes()
+{
+    if (!jackdaw_engine_is_recording()) {
+        m_take_end_x.clear();
+        return;
+    }
+    JackDawProject *p = m_timeline->Project();
+    guint n = jackdaw_project_track_count(p);
+    for (guint i = 0; i < n; i++) {
+        JackDawTrack *t = jackdaw_project_get_track(p, i);
+        if (!t || !jackdaw_track_is_armed(t))
+            continue;
+        gint count = g_atomic_int_get(&t->rec_peak_count);
+        if (count <= 0)
+            continue;
+        off_t tl1 = t->rec_peak_origin - t->rec_latency + (off_t)count * AUDIO_CLIP_PEAK_BLOCK;
+        float x = kTimelineHeaderWidth + m_timeline->FrameToX(tl1);
+        auto it = m_take_end_x.find(t);
+        float last = it != m_take_end_x.end() ? it->second : x;
+        m_take_end_x[t] = x;
+        float lo = (last < x ? last : x) - 3.0f;
+        float hi = (last > x ? last : x) + 3.0f;
+        float top = RowTop((int)i) - m_scroll_y;
+        Invalidate(BRect(lo, top, hi, top + RowHeight((int)i) - 1.0f));
+    }
+}
+
 /* The take each armed track is recording, drawn exactly like a region (same
  * renderer, lanes and scale) in the record palette, from the live peak table
  * the RT path fills (fixed AUDIO_CLIP_PEAK_BLOCK blocks, see track.h). It sits

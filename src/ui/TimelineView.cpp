@@ -179,6 +179,7 @@ void TimelineView::LocateTo(off_t frame)
 void TimelineView::TickUpdate()
 {
     m_track_area->UpdateMeters();
+    m_track_area->InvalidateLiveTakes();
 
     off_t pos = jackdaw_engine_get_play_pos();
     if (pos == m_last_playhead)
