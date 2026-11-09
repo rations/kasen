@@ -29,8 +29,9 @@ build order and dependencies below still apply.
         ├─► NAMku  ───────────► namku       Neural Amp Modeler VST3
         ├─► DRUMku ───────────► drumku      MIDI drum-sampler VST3 instrument
         │
-  LV2-haiku ────────────────► lv2_haiku   LV2 stack (lilv/serd/sord/sratom/zix,
-        │  (static libs, MIT/ISC)           spec bundles), JACK LV2 host + tools
+  LV2-renku ────────────────► lv2_renku   LV2 stack (lilv/serd/sord/sratom/zix,
+        │  (static libs, MIT/ISC)           spec bundles) + tools
+        │                     └──► lv2_renku_jack  JACK LV2 host (optional)
         ├─► hktuner ─────────► hktuner      chromatic tuner LV2 (native GUI)
         │
   kasen ────────────────────► kasen       the multitrack DAW (hosts VST3 + LV2 + VST2)
@@ -40,7 +41,7 @@ build order and dependencies below still apply.
                                             → native Haiku stub add-ons the DAW loads
 ```
 
-`lv2_haiku` is both a build-time and a runtime dependency of `kasen`: the libraries are
+`lv2_renku` is both a build-time and a runtime dependency of `kasen`: the libraries are
 linked statically, but lilv needs the LV2 **specification bundles** it installs to
 `add-ons/media/LV2` to load any plug-in.
 
@@ -52,7 +53,8 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | `jackgraph` | 0.2-1 | [jack-graph-haiku](https://github.com/rations/jack-graph-haiku) | native patchbay + server control GUI | MIT |
 | `vst3_renku` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | Media Kit VST3 host (`vst3host`) + example plug-ins (+ the SDK); replaces `vst3_haiku` | MIT |
 | `vst3_renku_jack` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | JACK VST3 host (`vst3jackhost`), optional | MIT |
-| `lv2_haiku` | 0.3.0-2 | [LV2-haiku](https://github.com/rations/LV2-haiku) | LV2 stack + spec bundles, JACK LV2 host + tools | ISC |
+| `lv2_renku` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | LV2 stack + spec bundles + tools; replaces `lv2_haiku` | ISC |
+| `lv2_renku_jack` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | JACK LV2 host (`lv2jackhost`), optional | ISC |
 | `namku` | 0.4.0-1 | [NAMku](https://github.com/rations/NAMku) | Neural Amp Modeler VST3 | MIT (+ MPL 2.0, Eigen) |
 | `drumku` | 0.4.0-1 | [DRUMku](https://github.com/rations/DRUMku) | MIDI drum-sampler VST3 | MIT |
 | `hktuner` | 0.4.0-1 | [hktuner](https://github.com/rations/hktuner) | chromatic tuner LV2 plug-in | MIT |
