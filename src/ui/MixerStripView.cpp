@@ -116,12 +116,45 @@ void MixerStripView::AttachedToWindow()
     Sync();
 }
 
+// The name sits on a header bar (drawn in Draw): give the label the bar's
+// colours so it blends in; Master is set apart in blue. Done here, after the
+// children's own AttachedToWindow, which adopts the parent's colours.
+void MixerStripView::AllAttached()
+{
+    BView::AllAttached();
+    rgb_color bar = HeaderColor();
+    m_name->SetViewColor(bar);
+    m_name->SetLowColor(bar);
+    m_name->SetHighColor(m_track ? ui_color(B_PANEL_TEXT_COLOR) : (rgb_color){255, 255, 255, 255});
+    m_name->SetFont(be_bold_font);
+    m_name->Invalidate();
+}
+
+rgb_color MixerStripView::HeaderColor() const
+{
+    if (!m_track)
+        return (rgb_color){62, 104, 168, 255};
+    return tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_1_TINT);
+}
+
 void MixerStripView::Draw(BRect updateRect)
 {
     (void)updateRect;
-    // Divider on the right edge between channels.
     BRect b = Bounds();
-    SetHighColor(tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_2_TINT));
+    rgb_color panel = ui_color(B_PANEL_BACKGROUND_COLOR);
+
+    // Header bar behind the name, full strip width.
+    BRect nf = m_name->Frame();
+    BRect bar(b.left + 1.0f, b.top, b.right - 1.0f, nf.bottom + 2.0f);
+    SetHighColor(HeaderColor());
+    FillRect(bar);
+    SetHighColor(tint_color(HeaderColor(), B_DARKEN_2_TINT));
+    StrokeLine(bar.LeftBottom(), bar.RightBottom());
+
+    // Bevelled edges: light on the left, a dark divider on the right.
+    SetHighColor(tint_color(panel, B_LIGHTEN_2_TINT));
+    StrokeLine(BPoint(b.left, b.top), BPoint(b.left, b.bottom));
+    SetHighColor(tint_color(panel, B_DARKEN_2_TINT));
     StrokeLine(BPoint(b.right, b.top), BPoint(b.right, b.bottom));
 }
 

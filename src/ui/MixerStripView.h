@@ -31,6 +31,7 @@ public:
     MixerStripView(JackDawProject *project, JackDawTrack *track, const BMessenger &main);
 
     void AttachedToWindow() override;
+    void AllAttached() override;
     void Draw(BRect updateRect) override;
     void MessageReceived(BMessage *message) override;
 
@@ -43,6 +44,7 @@ public:
     }
 
 private:
+    rgb_color HeaderColor() const;
     int Slot() const
     {
         return m_track ? (int)m_track->slot : -1;

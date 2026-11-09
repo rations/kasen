@@ -33,6 +33,7 @@ public:
     void SetCenterLabel(const char *label);
 
 private:
+    void StrokeArcPath(float cx, float cy, float r, double a0, double a1);
     void FormatValue(char *buf, size_t len) const;
     void ApplyDelta(double new_value); // clamp, redraw, notify
 
