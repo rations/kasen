@@ -247,7 +247,7 @@ static BMenuItem *AddItem(BMenu *menu, const char *label, uint32 what, char shor
 }
 
 MainWindow::MainWindow(JackDawProject *project)
-    : BWindow(BRect(100, 100, 1100, 700), "JackDAW", B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
+    : BWindow(BRect(100, 100, 1100, 700), "Kasen", B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
       m_project(project), m_transport(NULL), m_timeline(NULL), m_tick_runner(NULL),
       m_metro_volume_window(NULL), m_countin_window(NULL), m_io_window(NULL),
       m_midictl_window(NULL), m_midictl_tick(NULL), m_mixer(NULL), m_mixer_item(NULL),
@@ -297,9 +297,9 @@ MainWindow::MainWindow(JackDawProject *project)
     AddCommonFilter(new TransportKeyFilter());
     AddCommonFilter(new FocusReleaseFilter());
 
-    // Diagnostic switch: JACKDAW_NO_TICK=1 disables the periodic UI refresh,
+    // Diagnostic switch: KASEN_NO_TICK=1 disables the periodic UI refresh,
     // to isolate whether the 30 Hz redraw traffic is implicated in xruns.
-    if (getenv("JACKDAW_NO_TICK") == NULL)
+    if (getenv("KASEN_NO_TICK") == NULL)
         m_tick_runner =
             new BMessageRunner(BMessenger(this), BMessage(MSG_UI_TICK), kTickIntervalUsec);
 
@@ -489,7 +489,7 @@ BMenuBar *MainWindow::BuildMenuBar()
     options->AddSeparatorItem();
     // Audio System — which backend the engine runs on. The engine opens it
     // once at startup (ports, routes and plug-ins are set up for its rate and
-    // period), so a change restarts JackDAW with the same project.
+    // period), so a change restarts Kasen with the same project.
     BMenu *audio = new BMenu("Audio System");
     audio->SetRadioMode(true);
     BMessage *mk = new BMessage(MSG_OPT_BACKEND);
@@ -717,13 +717,13 @@ void MainWindow::UpdateTitle()
     if (f && *f) {
         gchar *base = g_path_get_basename(f);
         BString title(base);
-        if (title.EndsWith(".jdaw"))
-            title.Truncate(title.Length() - 5);
-        title << " — JackDAW";
+        if (title.EndsWith(JACKDAW_PROJECT_EXT))
+            title.Truncate(title.Length() - strlen(JACKDAW_PROJECT_EXT));
+        title << " — Kasen";
         SetTitle(title.String());
         g_free(base);
     } else {
-        SetTitle("JackDAW");
+        SetTitle("Kasen");
     }
 }
 
@@ -825,8 +825,8 @@ void MainWindow::ShowSaveAsPanel()
     if (cur && *cur) {
         gchar *base = g_path_get_basename(cur);
         BString leaf(base);
-        if (leaf.EndsWith(".jdaw"))
-            leaf.Truncate(leaf.Length() - 5);
+        if (leaf.EndsWith(JACKDAW_PROJECT_EXT))
+            leaf.Truncate(leaf.Length() - strlen(JACKDAW_PROJECT_EXT));
         m_save_panel->SetSaveText(leaf.String());
         g_free(base);
     } else {
@@ -1437,7 +1437,7 @@ void MainWindow::MessageReceived(BMessage *message)
             ShowOpenPanel();
             break;
         case MSG_OPEN_PROJECT_REFS: {
-            // Selection from the "Open Project" panel (a .jdaw file).
+            // Selection from the "Open Project" panel (a .kasen file).
             entry_ref ref;
             if (message->FindRef("refs", 0, &ref) == B_OK) {
                 BEntry entry(&ref, true);
@@ -1605,7 +1605,7 @@ void MainWindow::MessageReceived(BMessage *message)
             if (have && strcmp(have, want) == 0)
                 break; // already on it
             m_restart_backend = want;
-            BString question("JackDAW restarts to use ");
+            BString question("Kasen restarts to use ");
             question << (strcmp(want, "jack") == 0 ? "JACK" : "the Media Kit")
                      << ". Save changes first?";
             ConfirmSaveThen(PENDING_RESTART, question.String());
@@ -1613,7 +1613,7 @@ void MainWindow::MessageReceived(BMessage *message)
         }
         case MSG_OPEN_PROJECT_PATH: {
             // A project named at launch (a restart onto another audio system,
-            // or `JackDAW file.jdaw`).
+            // or `Kasen file.kasen`).
             const char *path = message->GetString("path", NULL);
             if (!path || !*path)
                 break;

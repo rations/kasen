@@ -1,8 +1,8 @@
-name			jackdaw
+name			kasen
 version			@VERSION@-@REVISION@
 architecture	x86_64
-summary			"JackDAW - multitrack DAW on the Media Kit or JACK"
-description		"A native Haiku multitrack digital audio workstation built on the
+summary			"Kasen - multitrack DAW on the Media Kit or JACK"
+description		"A native multitrack digital audio workstation built on the
 Interface Kit: audio and MIDI tracks, a piano-roll editor, a mixer, VST3 and LV2 effects,
 VST3 instruments, MIDI control-surface mapping, project save/load, and offline/realtime
 render. Plug-in editors are embedded natively in the FX window when a plug-in provides
@@ -20,8 +20,8 @@ licenses {
 	"MIT"
 }
 provides {
-	jackdaw = @VERSION@
-	app:JackDAW = @VERSION@
+	kasen = @VERSION@
+	app:Kasen = @VERSION@
 }
 requires {
 	haiku
@@ -32,5 +32,5 @@ requires {
 	libsamplerate
 }
 urls {
-	"https://github.com/rations/jackDAW-haiku"
+	"https://github.com/rations/kasen"
 }

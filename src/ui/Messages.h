@@ -1,6 +1,6 @@
 #pragma once
 
-// BMessage `what` constants shared by the JackDAW UI. One flat namespace so
+// BMessage `what` constants shared by the Kasen UI. One flat namespace so
 // MainWindow::MessageReceived can route everything; grouped by source.
 enum {
     // Periodic UI refresh (BMessageRunner owned by MainWindow).
@@ -120,7 +120,7 @@ enum {
     MSG_OPT_MIDI_CONTROL = 'omid',
     MSG_OPT_BACKEND = 'obke', // Audio System item: string "backend" "mediakit" | "jack"
 
-    // To JackDawApp: start JackDAW again once it has quit; string "path" =
+    // To JackDawApp: start Kasen again once it has quit; string "path" =
     // the project to reopen (may be absent).
     MSG_APP_RESTART = 'arst',
 

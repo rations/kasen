@@ -107,13 +107,13 @@ static inline void ph_safety_clamp(float *L, float *R, int nframes)
     }
 }
 
-/* JACKDAW_DIAG helpers (per-TU static cache is fine — the env never changes
+/* KASEN_DIAG helpers (per-TU static cache is fine — the env never changes
  * mid-run). */
 static inline gboolean ph_diag_enabled_i(void)
 {
     static int e = -1;
     if (e < 0)
-        e = (g_getenv("JACKDAW_DIAG") != NULL) ? 1 : 0;
+        e = (g_getenv("KASEN_DIAG") != NULL) ? 1 : 0;
     return e;
 }
 
@@ -135,7 +135,7 @@ G_BEGIN_DECLS
  * read by the VST2 audioMaster callback. Any out-param may be NULL. */
 void ph_get_transport(double *bpm, double *sr, gint64 *frame, gboolean *playing);
 
-/* Spawn the out-of-process scan helper (`JackDAW --scan-plugin <fmt> <path>`)
+/* Spawn the out-of-process scan helper (`Kasen --scan-plugin <fmt> <path>`)
  * for one plug-in file/bundle and append its catalog entries. Implemented in
  * pluginhost.cpp; used by both the VST3 and VST2 scans so a crashing module
  * kills only the throwaway helper. */

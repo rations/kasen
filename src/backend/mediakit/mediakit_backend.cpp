@@ -1,6 +1,6 @@
 /* mediakit_backend.cpp — the RenkuOS Media Kit implementation of audio_backend.h.
  *
- * JackDAW becomes one media node, "JackDAW", that other nodes connect to and
+ * Kasen becomes one media node, "Kasen", that other nodes connect to and
  * that the user patches in Cortex. It is a BBufferProducer and a
  * BBufferConsumer driven by its own BMediaEventLooper, in the way
  * SoundPlayNode (src/kits/media/SoundPlayNode.cpp) drives BSoundPlayer:
@@ -53,7 +53,7 @@
  * Period changes (multi_audio's "Buffer size" setting, changed while
  * running). Neither the system mixer nor multi_audio accepts ChangeFormat()
  * from a producer, and the Media Kit sends no format-change notice, so:
- *  - A hardware input that JackDAW feeds directly asks for its new length
+ *  - A hardware input that Kasen feeds directly asks for its new length
  *    itself (FormatChangeRequested); it is accepted when every other output
  *    goes to that same device or to the system mixer.
  *  - The system mixer, when its output changes, tells its producers of its
@@ -88,7 +88,7 @@
  * MIDI (Midi Kit 2, patched in PatchBay; the Media Kit carries no MIDI).
  *  - Each engine MIDI port is an endpoint registered with the MIDI roster:
  *    an input port a BMidiLocalConsumer, an output port a BMidiLocalProducer,
- *    named "JackDAW MIDI in N", "JackDAW MIDI out N", "JackDAW control in".
+ *    named "Kasen MIDI in N", "Kasen MIDI out N", "Kasen control in".
  *    The engine's connect(source, port) connects another endpoint by name.
  *  - In: a consumer's own thread (the Midi Kit's, real-time priority) puts
  *    each event and its time into a lock-free ring. The cycle that plays at
@@ -110,7 +110,7 @@
  * thread, as for every node), and buffer groups also when the period
  * changes; never per cycle. Buffer requests do not wait.
  *
- * Other hosts. Nothing here is JackDAW's engine, so another program can build
+ * Other hosts. Nothing here is Kasen's engine, so another program can build
  * this file in and drive it through the same table (VST3-renku's vst3host
  * does). jackdaw_mediakit_set_node_name renames the node and its MIDI
  * endpoints, open's client name sets the ports' full-name prefix, and the
@@ -153,10 +153,10 @@ namespace
 {
 
 const int32 kMaxPorts = 256;
-const int32 kMaxOutPorts = 64;              // out_1 .. out_64, as JACKDAW_MAX_TRACKS
-const int32 kMaxJacks = kMaxOutPorts + 2;   // Master, Out 1 ... Out 64, Metronome
-const int32 kMaxOutConns = 8;               // connections per jack
-const int32 kMaxInputs = 128;               // input connections (a route keeps 8 bits)
+const int32 kMaxOutPorts = 64;            // out_1 .. out_64, as JACKDAW_MAX_TRACKS
+const int32 kMaxJacks = kMaxOutPorts + 2; // Master, Out 1 ... Out 64, Metronome
+const int32 kMaxOutConns = 8;             // connections per jack
+const int32 kMaxInputs = 128;             // input connections (a route keeps 8 bits)
 // The free input jack of capture port slot p has destination id
 // kFreeJackBase + p; a connection made on it gets the id of its Input.
 const int32 kFreeJackBase = 0x10000;
@@ -181,8 +181,8 @@ const char *kCapturePrefix = "media:";
 // The node's name (Cortex, MIDI endpoint names, thread names, log lines) and
 // the prefix of our ports' full names ("<client name>:"). Written only by
 // jackdaw_mediakit_set_node_name and mk_open while no node exists, read after.
-char gNodeName[B_MEDIA_NAME_LENGTH] = "JackDAW";
-char gClientPrefix[64] = "jackdaw:";
+char gNodeName[B_MEDIA_NAME_LENGTH] = "Kasen";
+char gClientPrefix[64] = "kasen:";
 
 enum { SEND_CYCLE_EVENT = BTimedEventQueue::B_USER_EVENT + 1 };
 enum {
@@ -211,7 +211,7 @@ const int32 kPortHeadroom = 8;
 const bigtime_t kRetireWait = 20000000;
 const int32 kMaxRetired = 16;
 
-/* JACKDAW_DIAG counters: written by the control thread with relaxed atomics
+/* KASEN_DIAG counters: written by the control thread with relaxed atomics
  * (no lock, no allocation), read and printed every 2 s by the roster
  * watcher's thread. */
 struct Diag {
@@ -232,10 +232,10 @@ struct Diag {
     std::atomic<int32> capMaxStepUs{0}; // largest stamp step (this report)
     std::atomic<int32> capDry{0};       // input ran dry in a cycle (this report)
     std::atomic<int32> capLatMin{INT32_MAX}, capLatMax{0}; // its offset, frames (this report)
-    std::atomic<int64> capFrames{0};    // frames since the first stamp
-    std::atomic<int64> capSpanUs{0};    // last stamp - first stamp
-    std::atomic<int64> capCycles0{0};   // fCycles at the first stamp
-    bigtime_t capFirst = 0, capPrev = 0; // control thread only
+    std::atomic<int64> capFrames{0};                       // frames since the first stamp
+    std::atomic<int64> capSpanUs{0};                       // last stamp - first stamp
+    std::atomic<int64> capCycles0{0};                      // fCycles at the first stamp
+    bigtime_t capFirst = 0, capPrev = 0;                   // control thread only
 };
 Diag gDiag;
 bool gDiagOn = false;
@@ -318,8 +318,8 @@ struct OutConn {
     // own); otherwise the format carries the longest we may send.
     bool fixedLength = false;
     bigtime_t groupLead = 0; // how far ahead of play our group has buffers for
-    bigtime_t latency = 0; // downstream
-    int32 portCapacity = 0; // of the consumer's port; 0 = unknown
+    bigtime_t latency = 0;   // downstream
+    int32 portCapacity = 0;  // of the consumer's port; 0 = unknown
 };
 
 struct Jack {
@@ -353,18 +353,18 @@ struct Input {
     // A source at another rate is converted as it arrives (libsamplerate);
     // NULL when it runs at ours. Control thread only, like the FIFO.
     SRC_STATE *src = NULL;
-    double srcRatio = 1.0;         // our rate / its rate
-    double srcAdjust = 0.0;        // drift correction, another clock only
-    float *srcIn = NULL;           // a slice of raw frames, as float
-    float *srcOut = NULL;          // the same, converted
+    double srcRatio = 1.0;              // our rate / its rate
+    double srcAdjust = 0.0;             // drift correction, another clock only
+    float *srcIn = NULL;                // a slice of raw frames, as float
+    float *srcOut = NULL;               // the same, converted
     uint32 srcInCap = 0, srcOutCap = 0; // frames
     // Its frames as they came, at its rate, interleaved float; the cycle
     // converts what it needs each period (_Convert), so a long buffer is not
     // converted all at once on the thread that runs the cycle.
     float *raw = NULL;
-    uint32 rawCap = 0;                 // frames, power of two
+    uint32 rawCap = 0;                  // frames, power of two
     uint64 rawWritten = 0, rawRead = 0; // frames
-    bool ourClock = true; // its last buffer was stamped on our time source
+    bool ourClock = true;               // its last buffer was stamped on our time source
     // The most frames one of its buffers brought (at our rate): a source
     // that sends long buffers (an app, 40 ms) is read once a whole one and
     // the usual margin are in, so it does not run dry between buffers.
@@ -784,7 +784,8 @@ Input *JdMediaNode::_FindInput(const media_destination &dest)
 /* The capture port slot whose free jack \a dest is, or -1. */
 int32 JdMediaNode::_FreeJackPort(const media_destination &dest) const
 {
-    if (dest.port != ControlPort() || dest.id < kFreeJackBase || dest.id >= kFreeJackBase + kMaxPorts)
+    if (dest.port != ControlPort() || dest.id < kFreeJackBase ||
+        dest.id >= kFreeJackBase + kMaxPorts)
         return -1;
     int32 p = dest.id - kFreeJackBase;
     const Port &port = fPorts[p];
@@ -864,7 +865,8 @@ status_t JdMediaNode::AcceptFormat(const media_destination &dest, media_format *
         return B_MEDIA_BAD_FORMAT;
     if (a.buffer_size == w.buffer_size) {
         int32 frames = (int32)lrint((double)fPeriod * a.frame_rate / fRate);
-        a.buffer_size = (size_t)std::max(frames, (int32)1) * a.channel_count * sample_size(a.format);
+        a.buffer_size =
+            (size_t)std::max(frames, (int32)1) * a.channel_count * sample_size(a.format);
     }
     return B_OK;
 }
@@ -1102,14 +1104,13 @@ void JdMediaNode::BufferReceived(BBuffer *buffer)
     buffer->Recycle();
 }
 
-/* JACKDAW_DIAG: capture stamps against the frames they carry. Control thread. */
+/* KASEN_DIAG: capture stamps against the frames they carry. Control thread. */
 void JdMediaNode::_DiagCapture(int32 index, bigtime_t start, uint32 frames)
 {
     int32 measured = gDiag.capInput.load(std::memory_order_relaxed);
     if (measured < 0) {
         gDiag.capInput.store(index, std::memory_order_relaxed);
-        gDiag.capCycles0.store(fCycles.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
+        gDiag.capCycles0.store(fCycles.load(std::memory_order_relaxed), std::memory_order_relaxed);
         gDiag.capFirst = gDiag.capPrev = start;
         gDiag.capFrames.store(0, std::memory_order_relaxed);
         gDiag.capSpanUs.store(0, std::memory_order_relaxed);
@@ -1131,7 +1132,7 @@ void JdMediaNode::_DiagCapture(int32 index, bigtime_t start, uint32 frames)
     gDiag.capBufs.fetch_add(1, std::memory_order_relaxed);
 }
 
-/* JACKDAW_DIAG: the measured input's connection ended or was remade, so its
+/* KASEN_DIAG: the measured input's connection ended or was remade, so its
  * stamps start over; measure afresh from the next buffer to arrive. */
 void JdMediaNode::_DiagForgetCapture(int32 index)
 {
@@ -1221,12 +1222,12 @@ status_t JdMediaNode::FormatProposal(const media_source &output, media_format *f
 }
 
 /* A consumer asks for another format: multi_audio does, for its new buffer
- * length, when JackDAW feeds a hardware input directly. Only the length may
+ * length, when Kasen feeds a hardware input directly. Only the length may
  * change, and it becomes the period of the whole node, so it is refused when
  * another output goes to a consumer that would still want the old one. */
 status_t JdMediaNode::FormatChangeRequested(const media_source &source,
-                                            const media_destination &dest,
-                                            media_format *format, int32 * /*deprecated*/)
+                                            const media_destination &dest, media_format *format,
+                                            int32 * /*deprecated*/)
 {
     int32 j;
     OutConn *o = _FindOutput(source, &j);
@@ -1569,7 +1570,7 @@ void JdMediaNode::_FollowMixer(const FollowMixer &m)
 {
     fMixerPort.store(m.mixerPort, std::memory_order_relaxed);
     if (m.period == fPeriod || fabsf(m.rate - fRate) > 0.5f)
-        return; // a new rate needs a restart of JackDAW
+        return; // a new rate needs a restart of Kasen
     for (int32 j = 0; j < kMaxJacks; j++)
         for (int32 c = 0; c < kMaxOutConns; c++)
             if (fJacks[j].conns[c].connected &&
@@ -1744,8 +1745,8 @@ void JdMediaNode::_WriteFifo(Input &in, const float *frames, uint32 count)
         in.read = in.written + count - in.capFrames;
     uint32 mask = in.capFrames - 1;
     for (uint32 f = 0; f < count; f++)
-        memcpy(in.fifo + ((in.written + f) & mask) * in.channels,
-               frames + (size_t)f * in.channels, sizeof(float) * in.channels);
+        memcpy(in.fifo + ((in.written + f) & mask) * in.channels, frames + (size_t)f * in.channels,
+               sizeof(float) * in.channels);
     in.written += count;
 }
 
@@ -1777,13 +1778,12 @@ void JdMediaNode::_Convert(Input &in, uint64 want, bool ourClock)
     while (in.written - in.read < want && in.rawWritten > in.rawRead) {
         double ratio = in.srcRatio * (1.0 + in.srcAdjust);
         uint64 need = want - (in.written - in.read);
-        uint32 part = (uint32)std::min<uint64>(in.rawWritten - in.rawRead,
-                                               (uint64)ceil(need / ratio) + 16);
+        uint32 part =
+            (uint32)std::min<uint64>(in.rawWritten - in.rawRead, (uint64)ceil(need / ratio) + 16);
         part = std::min(part, in.srcInCap);
         for (uint32 f = 0; f < part; f++)
             memcpy(in.srcIn + (size_t)f * in.channels,
-                   in.raw + ((in.rawRead + f) & mask) * in.channels,
-                   sizeof(float) * in.channels);
+                   in.raw + ((in.rawRead + f) & mask) * in.channels, sizeof(float) * in.channels);
         SRC_DATA d;
         memset(&d, 0, sizeof d);
         d.data_in = in.srcIn;
@@ -2007,8 +2007,7 @@ void JdMediaNode::_FillMidi(Port &port, bigtime_t performanceTime)
     if (!port.midiRing)
         return;
     bigtime_t delay = EventLatency() + SchedulingLatency() + BufferDuration();
-    fMidiDelayFrames.store((int32)(delay * (double)fRate / 1000000.0),
-                           std::memory_order_relaxed);
+    fMidiDelayFrames.store((int32)(delay * (double)fRate / 1000000.0), std::memory_order_relaxed);
     bigtime_t windowStart = TimeSource()->RealTimeFor(performanceTime, delay);
     bigtime_t windowEnd = windowStart + BufferDuration();
     uint32 last = 0;
@@ -2099,7 +2098,7 @@ void JdMediaNode::_SendOutputs(bigtime_t performanceTime)
             const media_raw_audio_format &a = o.output.format.u.raw_audio;
             size_t ss = sample_size(a.format);
             size_t bytes = (size_t)fPeriod * jk.channels * ss; // <= a.buffer_size
-            BBuffer *buf = o.group->RequestBuffer(bytes, 0); // never wait
+            BBuffer *buf = o.group->RequestBuffer(bytes, 0);   // never wait
             if (!buf) {
                 gDiag.noBuffer.fetch_add(1, std::memory_order_relaxed);
                 notify_xrun();
@@ -2196,7 +2195,7 @@ struct CaptureSource {
 /* Hardware capture channels (every audio output of every physical-input
  * node), then the audio outputs of applications (MediaPlayer, another DAW)
  * and the system mixer's free output, as JACK lists every client's ports;
- * then the channels of inputs patched into JackDAW from anything else.
+ * then the channels of inputs patched into Kasen from anything else.
  * Non-RT. */
 int32 find_input_from(const media_source &source);
 void give_back_to_mixer(BMediaRoster *roster, const media_source &source,
@@ -2406,8 +2405,7 @@ bool playback_card(BMediaRoster *roster, media_node *card)
 
 /* The card's mono playback jacks ("playback 1", ...), each name once, in
  * channel order; a free one for each where there is one. */
-void playback_inputs(BMediaRoster *roster, const media_node &card,
-                     std::vector<media_input> &inputs)
+void playback_inputs(BMediaRoster *roster, const media_node &card, std::vector<media_input> &inputs)
 {
     std::vector<media_input> all(64);
     int32 n = 0;
@@ -2666,7 +2664,7 @@ void check_mixer_period()
                    500000);
 }
 
-/* JACKDAW_DIAG: what the node did in the last 2 s. Runs on the watcher. */
+/* KASEN_DIAG: what the node did in the last 2 s. Runs on the watcher. */
 void print_diag()
 {
     if (!gNode)
@@ -2693,9 +2691,9 @@ void print_diag()
     double rate = gNode->Rate();
     double frames = (double)gDiag.capFrames.load(std::memory_order_relaxed);
     double span = (double)gDiag.capSpanUs.load(std::memory_order_relaxed);
-    double cycleFrames = (double)(gNode->fCycles.load() -
-                                  gDiag.capCycles0.load(std::memory_order_relaxed)) *
-                         gNode->Period();
+    double cycleFrames =
+        (double)(gNode->fCycles.load() - gDiag.capCycles0.load(std::memory_order_relaxed)) *
+        gNode->Period();
     double stampPpm = span > 0 ? (span - frames * 1e6 / rate) / span * 1e6 : 0;
     double cyclePpm = frames > 0 ? (cycleFrames - frames) / frames * 1e6 : 0;
     fprintf(stderr,
@@ -2868,7 +2866,7 @@ int mk_open(const char *clientName, const JdBackendCallbacks *cb, void *arg, cha
         roster->StartWatching(BMessenger(gWatcher), B_MEDIA_SERVER_QUIT);
         BMessenger watcher(gWatcher);
         BMidiRoster::StartWatching(&watcher);
-        const char *diag = getenv("JACKDAW_DIAG");
+        const char *diag = getenv("KASEN_DIAG");
         gDiagOn = diag && *diag && strcmp(diag, "0") != 0;
         if (gDiagOn) {
             BMessage report(MSG_DIAG_REPORT);
@@ -2892,7 +2890,7 @@ int mk_activate(void)
     // 1 and 2, as JACK connects them to system:playback_1/2; the system mixer
     // is not in the way. Only without a card at our rate do the Master and
     // Metronome go to the system mixer instead. The Metronome only if a
-    // "metronome" port was registered before this (JackDAW's is); a host
+    // "metronome" port was registered before this (Kasen's is); a host
     // without one leaves no silent wire.
     bool direct = false;
     if (const char **playback = mk_get_ports(JD_PORT_AUDIO, JD_PORT_INPUT | JD_PORT_PHYSICAL)) {
@@ -3391,8 +3389,8 @@ int midi_connect(const char *source, const char *destination, bool connect)
     bool connected = producer->IsConnected(consumer);
     if (connect && connected)
         result = EEXIST;
-    else if (connect != connected && (connect ? producer->Connect(consumer)
-                                              : producer->Disconnect(consumer)) != B_OK)
+    else if (connect != connected &&
+             (connect ? producer->Connect(consumer) : producer->Disconnect(consumer)) != B_OK)
         result = -1;
     other->Release();
     return result;
@@ -3414,8 +3412,8 @@ void give_back_to_mixer(BMediaRoster *roster, const media_source &source,
         media_input madeIn;
         status_t err = roster->Connect(source, in.destination, &fmt, &madeOut, &madeIn);
         if (err != B_OK)
-            fprintf(stderr, "%s media: giving an output back to the system mixer: %s\n",
-                    gNodeName, strerror(err));
+            fprintf(stderr, "%s media: giving an output back to the system mixer: %s\n", gNodeName,
+                    strerror(err));
     }
     roster->ReleaseNode(mixer);
 }
@@ -3519,8 +3517,8 @@ int mk_connect(const char *source, const char *destination)
         int32 input = s->input >= 0 ? s->input : find_input_from(s->output.source);
         if (input < 0 || !gNode->fInputs[input].connected ||
             s->channel >= gNode->fInputs[input].channels) {
-            fprintf(stderr, "%s media: connect %s: that output is connected elsewhere\n",
-                    gNodeName, source);
+            fprintf(stderr, "%s media: connect %s: that output is connected elsewhere\n", gNodeName,
+                    source);
             return -1;
         }
         port->route.store(((int32)gNode->fInputs[input].generation << 16) | (input << 8) |

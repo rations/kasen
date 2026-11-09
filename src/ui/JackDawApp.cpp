@@ -12,12 +12,12 @@
 #include "ScanWindow.h"
 
 JackDawApp::JackDawApp(JackDawProject *project)
-    : BApplication("application/x-vnd.jackdaw"), m_project(project), m_main_window(NULL),
+    : BApplication("application/x-vnd.kasen"), m_project(project), m_main_window(NULL),
       m_restart(false)
 {
 }
 
-// `JackDAW <project.jdaw>`: open that project once the window is up. This is
+// `Kasen <project.kasen>`: open that project once the window is up. This is
 // how a restart onto another audio system brings the session back. Delivered
 // before ReadyToRun at launch (BApplication posts B_ARGV_RECEIVED first).
 void JackDawApp::ArgvReceived(int32 argc, char **argv)
@@ -104,7 +104,7 @@ void JackDawApp::RunStartupScan()
     if (!added)
         return;
     // Report what is new, and hold the main window back until it is dismissed.
-    sem_id done = create_sem(0, "jackdaw_new_plugins");
+    sem_id done = create_sem(0, "kasen_new_plugins");
     if (done >= 0) {
         (new NewPluginsWindow(added, done))->Show();
         while (acquire_sem(done) == B_INTERRUPTED) {

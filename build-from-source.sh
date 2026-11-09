@@ -1,5 +1,5 @@
 #!/bin/sh
-# build-from-source.sh — build and install JackDAW from source on Haiku.
+# build-from-source.sh — build and install Kasen from source on Haiku.
 #
 # Build these from source FIRST, in order (each has its own build-from-source.sh):
 #   1. jack-port-haiku   (libjack)
@@ -17,9 +17,9 @@ make clean
 make
 
 mkdir -p /boot/system/non-packaged/apps
-cp JackDAW /boot/system/non-packaged/apps/JackDAW
-mkdir -p /boot/system/non-packaged/add-ons/JackDAW
-cp backends/jack.so /boot/system/non-packaged/add-ons/JackDAW/jack.so
-echo ">> Installed JackDAW to /boot/system/non-packaged/apps/JackDAW"
-echo ">> and its JACK support to /boot/system/non-packaged/add-ons/JackDAW/jack.so"
-echo ">> Start jackd, then launch JackDAW from Deskbar (Applications) or run ./JackDAW"
+cp Kasen /boot/system/non-packaged/apps/Kasen
+mkdir -p /boot/system/non-packaged/add-ons/Kasen
+cp backends/jack.so /boot/system/non-packaged/add-ons/Kasen/jack.so
+echo ">> Installed Kasen to /boot/system/non-packaged/apps/Kasen"
+echo ">> and its JACK support to /boot/system/non-packaged/add-ons/Kasen/jack.so"
+echo ">> Start jackd, then launch Kasen from Deskbar (Applications) or run ./Kasen"

@@ -1,13 +1,13 @@
 /* audio_backend.c — find and load the engine's audio backend.
  *
- * The Media Kit backend ("mediakit") is built into JackDAW: it needs only the
- * system's libmedia. The JACK backend is an add-on (jack.so), so JackDAW itself does not link
+ * The Media Kit backend ("mediakit") is built into Kasen: it needs only the
+ * system's libmedia. The JACK backend is an add-on (jack.so), so Kasen itself does not link
  * libjack and starts on a system without JACK installed. It is looked for in
  * this order, and the first one that loads is used for the rest of the run
  * (it is never unloaded: the engine holds its function table):
- *   1. $JACKDAW_BACKEND_DIR/jack.so, for testing a build
- *   2. backends/jack.so next to the JackDAW executable (a build tree)
- *   3. JackDAW/jack.so in the add-ons directories, user before system,
+ *   1. $KASEN_BACKEND_DIR/jack.so, for testing a build
+ *   2. backends/jack.so next to the Kasen executable (a build tree)
+ *   3. Kasen/jack.so in the add-ons directories, user before system,
  *      non-packaged before packaged (the usual Haiku add-on search order)
  *
  * Another application that builds these backends in (VST3-renku's hosts,
@@ -87,7 +87,7 @@ static void app_dir(char *out, size_t len)
 
 const JdBackend *audio_backend_load(const char *which, char *err, size_t err_len)
 {
-    return audio_backend_load_for(which, "JackDAW", "JACKDAW_BACKEND_DIR", err, err_len);
+    return audio_backend_load_for(which, "Kasen", "KASEN_BACKEND_DIR", err, err_len);
 }
 
 const JdBackend *audio_backend_load_for(const char *which, const char *app_name,

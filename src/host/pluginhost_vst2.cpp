@@ -1,4 +1,4 @@
-/* pluginhost_vst2.cpp — VST2 backend for the jackDAW plugin host.
+/* pluginhost_vst2.cpp — VST2 backend for the Kasen plugin host.
  *
  * Adapted from the Linux JackDAW VST2 host, reshaped to the Haiku port's
  * front-struct backend model (one PluginInstance, a Vst2Backend behind it,

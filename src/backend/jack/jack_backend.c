@@ -1,7 +1,7 @@
 /* jack_backend.c — the JACK implementation of audio_backend.h.
  *
  * A thin layer over the JACK client API: one client, opened with
- * JackNoStartServer, so JackDAW only ever joins a server the user started
+ * JackNoStartServer, so Kasen only ever joins a server the user started
  * (from Jack Graph or jackd). JdPort is the jack_port_t itself, and the RT
  * calls are direct forwards, so the process path costs one indirect call per
  * port buffer.

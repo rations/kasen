@@ -66,10 +66,10 @@ VERSION_PARTS := $(subst ., ,$(VERSION))
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(HOST_SOURCES:.cpp=.o) $(SDK_OBJECTS)
 DEPS    = $(OBJECTS:.o=.d)
-TARGET  = JackDAW
+TARGET  = Kasen
 
 # The JACK backend is an add-on that the engine loads at startup
-# (src/engine/audio_backend.c), so JackDAW itself never links libjack and runs
+# (src/engine/audio_backend.c), so Kasen itself never links libjack and runs
 # on a system without JACK. Plain C over libjack and the backend table.
 JACK_BACKEND = backends/jack.so
 
@@ -83,7 +83,7 @@ $(JACK_BACKEND): src/backend/jack/jack_backend.c src/engine/audio_backend.h
 $(TARGET): $(OBJECTS) VERSION
 	$(CXX) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
 	setversion $(TARGET) -app $(word 1,$(VERSION_PARTS)) $(word 2,$(VERSION_PARTS)) \
-		$(word 3,$(VERSION_PARTS)) -short $(VERSION) -long "JackDAW $(VERSION)"
+		$(word 3,$(VERSION_PARTS)) -short $(VERSION) -long "Kasen $(VERSION)"
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

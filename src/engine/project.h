@@ -142,18 +142,21 @@ gboolean jackdaw_project_get_master_muted(JackDawProject *p);
 void jackdaw_project_set_file(JackDawProject *p, const gchar *path);
 const gchar *jackdaw_project_get_file(JackDawProject *p);
 
+/* Project file extension: <name>/<name>.kasen. */
+#define JACKDAW_PROJECT_EXT ".kasen"
+
 /* ---- Save / load ----
- * A project is a self-contained bundle directory <name>/ holding <name>.jdaw (a
+ * A project is a self-contained bundle directory <name>/ holding <name>.kasen (a
  * GKeyFile) plus audio/ with copies of every referenced sound file; save rolls
- * the previous .jdaw into a single .bak. `path` may be the bundle dir, the
- * .jdaw, or a bare name — the bundle layout is resolved from it. All fields read
+ * the previous .kasen into a single .bak. `path` may be the bundle dir, the
+ * .kasen, or a bare name — the bundle layout is resolved from it. All fields read
  * back on load are bounds-checked/clamped (untrusted input): a corrupt file
  * fails to load, never crashes. Boolean convention: FALSE = success, TRUE =
  * failure. Both call the MainWindow-thread-only engine API (single caller). */
 gboolean jackdaw_project_save(JackDawProject *p, const gchar *path);
 gboolean jackdaw_project_load(JackDawProject *p, const gchar *path);
 
-/* Default location for new project bundles (~/Music/JackDAW/Projects); created
+/* Default location for new project bundles (~/Music/Kasen/Projects); created
  * if absent. Caller frees. */
 gchar *jackdaw_default_projects_dir(void);
 

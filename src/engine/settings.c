@@ -16,11 +16,11 @@ void settings_init(void)
     if (find_directory(B_USER_SETTINGS_DIRECTORY, -1, true, base, sizeof(base)) != B_OK)
         g_strlcpy(base, "/boot/home/config/settings", sizeof(base));
 
-    gchar *dir = g_build_filename(base, "JackDAW", NULL);
+    gchar *dir = g_build_filename(base, "Kasen", NULL);
     g_mkdir_with_parents(dir, 0700);
     g_free(dir);
 
-    path = g_build_filename(base, "JackDAW", "settings", NULL);
+    path = g_build_filename(base, "Kasen", "settings", NULL);
     kf = g_key_file_new();
     g_key_file_load_from_file(kf, path, G_KEY_FILE_NONE, NULL);
 }
@@ -55,7 +55,7 @@ guint32 settings_get_uint32(const gchar *key, guint32 def)
     if (!kf)
         return def;
     GError *err = NULL;
-    gint64 v = g_key_file_get_int64(kf, "jackdaw", key, &err);
+    gint64 v = g_key_file_get_int64(kf, "kasen", key, &err);
     if (err) {
         g_error_free(err);
         return def;
@@ -67,7 +67,7 @@ void settings_set_uint32(const gchar *key, guint32 val)
 {
     if (!kf)
         return;
-    g_key_file_set_int64(kf, "jackdaw", key, (gint64)val);
+    g_key_file_set_int64(kf, "kasen", key, (gint64)val);
 }
 
 gchar *settings_get_string(const gchar *key, const gchar *def)
@@ -75,7 +75,7 @@ gchar *settings_get_string(const gchar *key, const gchar *def)
     if (!kf)
         return g_strdup(def ? def : "");
     GError *err = NULL;
-    gchar *v = g_key_file_get_string(kf, "jackdaw", key, &err);
+    gchar *v = g_key_file_get_string(kf, "kasen", key, &err);
     if (err) {
         g_error_free(err);
         return g_strdup(def ? def : "");
@@ -87,5 +87,5 @@ void settings_set_string(const gchar *key, const gchar *val)
 {
     if (!kf)
         return;
-    g_key_file_set_string(kf, "jackdaw", key, val ? val : "");
+    g_key_file_set_string(kf, "kasen", key, val ? val : "");
 }

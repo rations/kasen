@@ -99,8 +99,8 @@ RenderWindow::RenderWindow(JackDawProject *project, BMessenger main)
         if (pf && *pf) {
             gchar *b = g_path_get_basename(pf);
             base = b;
-            if (base.EndsWith(".jdaw"))
-                base.Truncate(base.Length() - 5);
+            if (base.EndsWith(JACKDAW_PROJECT_EXT))
+                base.Truncate(base.Length() - strlen(JACKDAW_PROJECT_EXT));
             g_free(b);
         }
         BString path;

@@ -582,7 +582,7 @@ GThread *jackdaw_render_offline_start(const RenderOptions *o, JackDawRenderProgr
     OfflineCtx *ctx = g_new0(OfflineCtx, 1);
     render_options_copy(&ctx->opt, o);
     ctx->prog = prog;
-    GThread *th = g_thread_new("jackdaw-render", render_offline_thread, ctx);
+    GThread *th = g_thread_new("kasen-render", render_offline_thread, ctx);
     if (!th) {
         render_options_free_contents(&ctx->opt);
         g_free(ctx);
@@ -744,7 +744,7 @@ gboolean jackdaw_render_realtime_start(const RenderOptions *o, JackDawRenderProg
 
     jackdaw_engine_locate(c->start);
     jackdaw_engine_render_tap_start(c->end);
-    c->writer = g_thread_new("jackdaw-render-rt", render_rt_writer, c);
+    c->writer = g_thread_new("kasen-render-rt", render_rt_writer, c);
     jackdaw_engine_start_playback();
     return FALSE;
 }

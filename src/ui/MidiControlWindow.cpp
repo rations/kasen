@@ -84,7 +84,7 @@ MidiControlWindow::MidiControlWindow(BMessenger target)
         new BScrollView("rows-scroll", m_rows_box, 0, false, true, B_FANCY_BORDER);
 
     BStringView *hint = new BStringView(
-        "hint", "Connect a footswitch / controller to jackdaw:control_in, then Learn a row.");
+        "hint", "Connect a footswitch / controller to kasen:control_in, then Learn a row.");
     // The effect plug-ins hear the same device (pluginhost_process_fx_midi).
     BStringView *hint2 =
         new BStringView("hint2", "Effect plug-ins with MIDI features of their own hear it too.");

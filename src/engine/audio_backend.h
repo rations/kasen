@@ -149,7 +149,7 @@ typedef const JdBackend *(*JdBackendEntryFn)(uint32_t abi);
 const JdBackend *jackdaw_mediakit_backend_entry(uint32_t abi);
 
 /* The name of the media node, as Cortex shows it; its MIDI endpoints are
- * "<name> MIDI in N" and so on. "JackDAW" unless set. Only takes effect if
+ * "<name> MIDI in N" and so on. "Kasen" unless set. Only takes effect if
  * called before open. Non-RT. */
 void jackdaw_mediakit_set_node_name(const char *name);
 

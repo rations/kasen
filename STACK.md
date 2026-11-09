@@ -1,16 +1,14 @@
-# The JackDAW audio stack on Haiku
+# The Kasen audio stack
 
 A set of native Haiku projects that together turn Haiku into a JACK-based recording and
 production system, with a DAW, plug-ins, and Windows plug-in support through Wine. This
 document explains what each piece is, how they depend on each other, and how they are built
 and released.
 
-**To install the stack, use the release:** download the zip from the
-[jackDAW-haiku releases](https://github.com/rations/jackDAW-haiku/releases) and run
-`sh install.sh`. Its README and release notes cover the details. The rest of this document is
-for building and maintaining the stack.
-
-Release 0.5 targets **Haiku nightly hrev60256, x86_64**.
+This document describes the stack as it was built for the Haiku 0.5 release (Haiku nightly
+hrev60256, x86_64), when the DAW was still called JackDAW. That release and its installer
+are retired; the packages are moving to their own repositories, built for RenkuOS. The
+build order and dependencies below still apply.
 
 ## The pieces
 
@@ -35,14 +33,14 @@ Release 0.5 targets **Haiku nightly hrev60256, x86_64**.
         │  (static libs, MIT/ISC)           spec bundles), JACK LV2 host + tools
         ├─► hktuner ─────────► hktuner      chromatic tuner LV2 (native GUI)
         │
-  jackDAW-haiku ────────────► jackdaw     the multitrack DAW (hosts VST3 + LV2 + VST2)
+  kasen ────────────────────► kasen       the multitrack DAW (hosts VST3 + LV2 + VST2)
 
   haiku-wine-port ──────────► wine        Wine 11.19 with the Haiku patches
         └─► vstbridge-haiku ──► vstbridge   Wine bridge: Windows VST2 + VST3
                                             → native Haiku stub add-ons the DAW loads
 ```
 
-`lv2_haiku` is both a build-time and a runtime dependency of `jackdaw`: the libraries are
+`lv2_haiku` is both a build-time and a runtime dependency of `kasen`: the libraries are
 linked statically, but lilv needs the LV2 **specification bundles** it installs to
 `add-ons/media/LV2` to load any plug-in.
 
@@ -58,7 +56,7 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | `namku` | 0.4.0-1 | [NAMku](https://github.com/rations/NAMku) | Neural Amp Modeler VST3 | MIT (+ MPL 2.0, Eigen) |
 | `drumku` | 0.4.0-1 | [DRUMku](https://github.com/rations/DRUMku) | MIDI drum-sampler VST3 | MIT |
 | `hktuner` | 0.4.0-1 | [hktuner](https://github.com/rations/hktuner) | chromatic tuner LV2 plug-in | MIT |
-| `jackdaw` | 0.6.0-1 | [jackDAW-haiku](https://github.com/rations/jackDAW-haiku) | the DAW | MIT |
+| `kasen` | 0.6.0-1 | [kasen](https://github.com/rations/kasen) | the DAW (formerly `jackdaw`) | MIT |
 | `wine` | 11.19-4 | [haiku-wine-port-jackdaw](https://github.com/rations/haiku-wine-port-jackdaw) | Wine with the Haiku patches (required by `vstbridge`) | LGPL v2.1 |
 | `vstbridge` | 0.2.0-1 | [vstbridge-haiku](https://github.com/rations/vstbridge-haiku) | Wine bridge for Windows VST2/VST3 → native stubs | GPL v3 (yabridge fork) |
 
@@ -116,7 +114,7 @@ the *only* directories a host searches and the *only* directories a plug-in inst
 
 Rules, binding across all repos:
 
-- **No dot-folders.** Never `~/.vst`, `~/.vst3`, `~/.clap`, `~/.lv2`, or `~/.jackdaw`. Haiku
+- **No dot-folders.** Never `~/.vst`, `~/.vst3`, `~/.clap`, `~/.lv2`, or `~/.kasen`. Haiku
   organises per-user files under the `~/config` hierarchy; use it.
 - **Discovery goes through `find_paths`/`BPathFinder`** with the subpaths above — never a
   hardcoded `/boot/...` path. One `find_paths(B_FIND_PATH_ADD_ONS_DIRECTORY, …)` call already
@@ -128,8 +126,8 @@ Rules, binding across all repos:
   plug-ins usually carry **no file extension** — discovery must not require `.so` (the `.so`
   some carry is an artifact of the vstbridge Wine stubs).
 - **User data/settings** go through `find_directory(B_USER_SETTINGS_DIRECTORY)` /
-  `B_USER_*` — e.g. JackDAW scratch recordings live under
-  `~/config/settings/JackDAW/recordings`, not a dot-folder.
+  `B_USER_*` — e.g. Kasen scratch recordings live under
+  `~/config/settings/Kasen/recordings`, not a dot-folder.
 
 `vstbridge` installs the native stub add-ons it generates for Windows plug-ins into the same
 `add-ons/media/{vstplugins,VST3}` locations (under a `vstbridge/` subfolder), so the DAW
@@ -150,10 +148,10 @@ plug-ins to a working install, and nothing else links against it.
 - **Two front-ends, same job.** `VSTBridge` is a native Interface Kit application in
   *Deskbar → Applications*, and `vstbridgectl` is the equivalent CLI. Either one scans the
   Windows plug-in directories you configure and syncs one native stub add-on per plug-in into
-  `add-ons/media/{vstplugins,VST3}/vstbridge`. JackDAW then loads them through its normal
+  `add-ons/media/{vstplugins,VST3}/vstbridge`. Kasen then loads them through its normal
   discovery path.
 - **Wine graphics driver: use `null`.** The editor is bridged by capturing the plug-in's window
-  and repainting it in JackDAW's FX window, so the plug-in's own on-screen window is never
+  and repainting it in Kasen's FX window, so the plug-in's own on-screen window is never
   wanted. With the `null` driver win32u draws offscreen: the window still gets `WM_PAINT` but
   never reaches a display. The driver is chosen once per prefix:
 
@@ -184,7 +182,7 @@ LV2-haiku            # lilv/serd/sord/sratom/zix static + spec bundles + lv2jack
 NAMku                # needs the VST3-haiku SDK
 DRUMku               # needs the VST3-haiku SDK
 hktuner              # needs the LV2-haiku staged headers
-jackDAW-haiku        # needs jack + the VST3-haiku SDK + the LV2-haiku stack
+kasen                # needs jack + the VST3-haiku SDK + the LV2-haiku stack
 haiku-wine-port      # wine, built with haikuporter (about an hour)
 vstbridge-haiku      # needs wine (winegcc) + meson/ninja, vendors its own SDK
 ```
