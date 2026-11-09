@@ -202,6 +202,14 @@ struct FollowMixer {
 // The control thread asks the watcher for a check at most once at a time.
 std::atomic<int32> gCheckQueued{0};
 const int32 kMinPeriod = 16;
+/* Slots of a consumer's port that our buffers leave free, for the control
+ * messages sent to it while it is busy (our own replies among them). */
+const int32 kPortHeadroom = 8;
+/* A group taken out of use waits this long at most for its buffers to come
+ * back before it is deleted anyway: longer than libmedia's 15 s port
+ * timeout, so a consumer that was stalled has given up or caught up. */
+const bigtime_t kRetireWait = 20000000;
+const int32 kMaxRetired = 16;
 
 /* JACKDAW_DIAG counters: written by the control thread with relaxed atomics
  * (no lock, no allocation), read and printed every 2 s by the roster
@@ -210,6 +218,7 @@ struct Diag {
     std::atomic<int32> sent{0};              // buffers handed to SendBuffer
     std::atomic<int32> sendFail{0};          // SendBuffer refused them
     std::atomic<int32> noBuffer{0};          // the buffer group was empty
+    std::atomic<int32> portFull{0};          // the consumer's port had no room
     std::atomic<int32> lateNotes{0};         // LateNoticeReceived
     std::atomic<int32> lateUs{0};            // largest late notice, usecs
     std::atomic<int32> peakMilli{0};         // largest master sample, x1000
@@ -310,6 +319,7 @@ struct OutConn {
     bool fixedLength = false;
     bigtime_t groupLead = 0; // how far ahead of play our group has buffers for
     bigtime_t latency = 0; // downstream
+    int32 portCapacity = 0; // of the consumer's port; 0 = unknown
 };
 
 struct Jack {
@@ -558,6 +568,21 @@ private:
     status_t _ChangePeriod(int32 period);
     bool _OthersTakeLength(const OutConn *except, port_id consumerPort) const;
     status_t _MakeOwnGroup(OutConn &o);
+    void _RetireGroup(BBufferGroup *group);
+    void _ReclaimRetired(bool all);
+
+    /* Buffer groups taken out of use (a new period, a new group, a
+     * disconnect) while their buffers may still be queued at a consumer or
+     * in its hands: deleting one then would invalidate buffers in flight.
+     * Each is deleted once all its buffers are back, or after kRetireWait.
+     * Control thread only. */
+    struct Retired {
+        BBufferGroup *group;
+        int32 back;      // buffers taken back from it
+        bigtime_t until; // delete it anyway after this (system time)
+    };
+    Retired fRetired[kMaxRetired];
+    int32 fRetiredCount = 0;
 
     float fRate;
     int32 fPeriod; // control thread
@@ -682,6 +707,7 @@ JdMediaNode::~JdMediaNode()
     for (int32 j = 0; j < kMaxJacks; j++)
         for (int32 c = 0; c < kMaxOutConns; c++)
             delete fJacks[j].conns[c].group;
+    _ReclaimRetired(true);
     for (int32 i = 0; i < kMaxInputs; i++) {
         free(fInputs[i].fifo);
         free(fInputs[i].scratch);
@@ -1308,7 +1334,7 @@ status_t JdMediaNode::SetBufferGroup(const media_source &source, BBufferGroup *g
     // is a no-op.
     if (group != NULL && group == o->group)
         return B_OK;
-    delete o->group;
+    _RetireGroup(o->group);
     o->group = group;
     o->ownGroup = false;
     if (!o->group)
@@ -1321,7 +1347,7 @@ status_t JdMediaNode::SetBufferGroup(const media_source &source, BBufferGroup *g
  * counted in yet) ahead of play, and coming back. */
 status_t JdMediaNode::_MakeOwnGroup(OutConn &o)
 {
-    delete o.group;
+    _RetireGroup(o.group);
     o.group = NULL;
     o.ownGroup = false;
     bigtime_t lead = o.latency + fInternalLatency;
@@ -1337,6 +1363,44 @@ status_t JdMediaNode::_MakeOwnGroup(OutConn &o)
     }
     o.ownGroup = true;
     return B_OK;
+}
+
+void JdMediaNode::_RetireGroup(BBufferGroup *group)
+{
+    if (!group)
+        return;
+    if (fRetiredCount == kMaxRetired) {
+        // Full (period changes faster than buffers come back): the oldest
+        // has waited longest.
+        delete fRetired[0].group;
+        memmove(&fRetired[0], &fRetired[1], (kMaxRetired - 1) * sizeof fRetired[0]);
+        fRetiredCount--;
+    }
+    fRetired[fRetiredCount++] = {group, 0, system_time() + kRetireWait};
+}
+
+/* Takes back what has come home of each retired group's buffers, without
+ * waiting, and deletes a group that has them all (or has waited long
+ * enough); `all` deletes every one. A buffer taken back stays out of the
+ * group, so the count only grows. Control thread, once a cycle. */
+void JdMediaNode::_ReclaimRetired(bool all)
+{
+    bigtime_t now = system_time();
+    int32 kept = 0;
+    for (int32 i = 0; i < fRetiredCount; i++) {
+        Retired &r = fRetired[i];
+        int32 count = 0;
+        if (r.group->CountBuffers(&count) != B_OK)
+            count = 0;
+        while (!all && r.back < count && r.group->RequestBuffer((size_t)1, 0) != NULL)
+            r.back++;
+        if (all || r.back >= count || now >= r.until) {
+            delete r.group;
+            continue;
+        }
+        fRetired[kept++] = r;
+    }
+    fRetiredCount = kept;
 }
 
 status_t JdMediaNode::GetLatency(bigtime_t *latency)
@@ -1421,6 +1485,8 @@ void JdMediaNode::Connect(status_t error, const media_source &source, const medi
     media_node_id ts;
     if (FindLatencyFor(dest, &o->latency, &ts) != B_OK)
         o->latency = 0;
+    port_info pinfo;
+    o->portCapacity = get_port_info(dest.port, &pinfo) == B_OK ? pinfo.capacity : 0;
     if (!o->group)
         SetBufferGroup(source, NULL);
     o->enabled = true;
@@ -1437,10 +1503,11 @@ void JdMediaNode::Disconnect(const media_source &what, const media_destination &
     o->reserved = false;
     o->fixedLength = false;
     o->output.destination = media_destination::null;
-    delete o->group;
+    _RetireGroup(o->group);
     o->group = NULL;
     o->ownGroup = false;
     o->latency = 0;
+    o->portCapacity = 0;
     _UpdateLatency();
     // That may have been what held the period off the mixer's.
     _QueuePeriodCheck();
@@ -1638,6 +1705,8 @@ void JdMediaNode::_RunCycle(bigtime_t performanceTime, bigtime_t lateness)
         gCb.process((jd_nframes_t)fPeriod, gArg);
     _SendOutputs(performanceTime);
     _SendMidi(performanceTime);
+    if (fRetiredCount > 0)
+        _ReclaimRetired(false);
     fCycles.fetch_add(1, std::memory_order_release);
 
     fFramesSent += (uint64)fPeriod;
@@ -2012,6 +2081,21 @@ void JdMediaNode::_SendOutputs(bigtime_t performanceTime)
             OutConn &o = jk.conns[k];
             if (!o.connected || !o.enabled || !o.group)
                 continue;
+            // Never wait on a full port. SendBuffer would block this thread,
+            // which also reads our own port, for up to 15 s. A consumer that
+            // is busy (multi_audio restarting its streams for a new length)
+            // can at the same time be sending us its request for that length
+            // while our port fills with its capture buffers: each then waits
+            // for the other until the timeout. This cycle's buffer for it is
+            // dropped instead.
+            if (o.portCapacity > 0) {
+                ssize_t queued = port_count(o.output.destination.port);
+                if (queued >= 0 && queued > o.portCapacity - kPortHeadroom) {
+                    gDiag.portFull.fetch_add(1, std::memory_order_relaxed);
+                    notify_xrun();
+                    continue;
+                }
+            }
             const media_raw_audio_format &a = o.output.format.u.raw_audio;
             size_t ss = sample_size(a.format);
             size_t bytes = (size_t)fPeriod * jk.channels * ss; // <= a.buffer_size
@@ -2589,14 +2673,15 @@ void print_diag()
         return;
     int32 lead = gDiag.minLeadUs.exchange(INT32_MAX, std::memory_order_relaxed);
     fprintf(stderr,
-            "%s media: cycles %d, sent %d, send failed %d, no buffer %d, late notices %d "
-            "(max %d us), late wakes %d, master peak %.3f, least lead %d us, event latency "
-            "%lld us\n",
+            "%s media: cycles %d, sent %d, send failed %d, no buffer %d, port full %d, late "
+            "notices %d (max %d us), late wakes %d, master peak %.3f, least lead %d us, event "
+            "latency %lld us\n",
             gNodeName, (int)gNode->fCycles.load(), (int)gDiag.sent.exchange(0),
             (int)gDiag.sendFail.exchange(0), (int)gDiag.noBuffer.exchange(0),
-            (int)gDiag.lateNotes.exchange(0), (int)gDiag.lateUs.exchange(0),
-            (int)gDiag.lateWake.exchange(0), gDiag.peakMilli.exchange(0) / 1000.0,
-            lead == INT32_MAX ? -1 : (int)lead, (long long)gNode->CurrentEventLatency());
+            (int)gDiag.portFull.exchange(0), (int)gDiag.lateNotes.exchange(0),
+            (int)gDiag.lateUs.exchange(0), (int)gDiag.lateWake.exchange(0),
+            gDiag.peakMilli.exchange(0) / 1000.0, lead == INT32_MAX ? -1 : (int)lead,
+            (long long)gNode->CurrentEventLatency());
 
     int32 capIn = gDiag.capInput.load(std::memory_order_relaxed);
     if (capIn < 0)
