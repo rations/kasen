@@ -12,10 +12,10 @@ class StateButton;
 class StateIconView;
 class StepperControl;
 
-// Transport bar (two rows, fixed metrics so it never re-flows on state change):
+// Transport bar (two rows; nothing re-flows on play/record state changes):
 //
-//   row 1  |◀ |<< >>| ▶| | ▶ ⟳ || ■ ●  <position> <state>   Metro BPM[-/+] Sig[-/+]/[-/+]
-//   row 2  Split | Grid Snap Bars                                                  Mixer
+//   row 1  |◀ |<< >>| ▶| | ▶ ⟳ || ■ ● | Split Grid Snap Bars   Metro BPM[-/+] Sig[-/+]/[-/+]
+//   row 2                          <position> <state>                          Mixer
 //
 // Momentary transport buttons post MSG_TRANSPORT_* to the window (the sole
 // engine caller). Tempo/grid/metronome controls apply to the project directly
@@ -38,6 +38,8 @@ public:
     void SyncControls();
 
 private:
+    void FitReadout();
+
     JackDawProject *m_project; // borrowed
 
     BButton *m_rtz_button;
@@ -50,7 +52,7 @@ private:
     BButton *m_stop_button;
     ContextButton *m_record_button;
     BStringView *m_readout;
-    StateIconView *m_state; // play / record / count-in icon, fixed width
+    StateIconView *m_state; // play / record / count-in icon, fixed width, right of the readout
 
     StateButton *m_split_button;
     BCheckBox *m_grid;

@@ -237,8 +237,12 @@ TransportView::TransportView(JackDawProject *project)
         new ContextButton("mixer", "Mixer", new BMessage(MSG_MIXER_TOGGLE), MSG_MIXER_MENU);
     m_mixer_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
 
-    // Row 1: transport, position and state, then tempo on the right.
-    // Row 2: editing tools, then the mixer on the right.
+    // An empty view as wide as the Mixer button, left of row 2, so the
+    // position readout sits in the true centre of the bar.
+    BView *balance = new BView("mixer_balance", 0);
+
+    // Row 1: transport, editing tools, then tempo on the right.
+    // Row 2: position readout and state icon centred, the mixer on the right.
     BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
         .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
         .SetInsets(B_USE_SMALL_INSETS, B_USE_SMALL_INSETS, B_USE_SMALL_INSETS, 0)
@@ -252,9 +256,11 @@ TransportView::TransportView(JackDawProject *project)
         .Add(m_pause_button)
         .Add(m_stop_button)
         .Add(m_record_button)
-        .AddStrut(12.0f)
-        .Add(m_readout)
-        .Add(m_state)
+        .Add(new BSeparatorView(B_VERTICAL))
+        .Add(m_split_button)
+        .Add(m_grid)
+        .Add(m_snap)
+        .Add(m_bars_mode)
         .AddGlue()
         .Add(m_metro_button)
         .Add(m_bpm)
@@ -263,11 +269,10 @@ TransportView::TransportView(JackDawProject *project)
         .End()
         .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
         .SetInsets(B_USE_SMALL_INSETS, B_USE_SMALL_SPACING, B_USE_SMALL_INSETS, B_USE_SMALL_INSETS)
-        .Add(m_split_button)
-        .Add(new BSeparatorView(B_VERTICAL))
-        .Add(m_grid)
-        .Add(m_snap)
-        .Add(m_bars_mode)
+        .Add(balance)
+        .AddGlue()
+        .Add(m_readout)
+        .Add(m_state)
         .AddGlue()
         .Add(m_mixer_button)
         .End();
@@ -278,16 +283,13 @@ void TransportView::AttachedToWindow()
     BView::AttachedToWindow();
     SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
 
-    // Pin the readout and state indicator to fixed widths (widest expected
-    // strings) so the transport bar never re-flows when playback state or the
-    // position format changes.
-    float readout_w = m_readout->StringWidth("00:00:00.000");
-    float w = m_readout->StringWidth("9999.99.9999");
-    if (w > readout_w)
-        readout_w = w;
-    readout_w += 8.0f;
-    m_readout->SetExplicitMinSize(BSize(readout_w, B_SIZE_UNSET));
-    m_readout->SetExplicitMaxSize(BSize(readout_w, B_SIZE_UNSET));
+    // Balance the Mixer button so the centred readout is truly centred.
+    BView *balance = FindView("mixer_balance");
+    if (balance) {
+        BSize mixer = m_mixer_button->PreferredSize();
+        balance->SetExplicitMinSize(BSize(mixer.width, 0));
+        balance->SetExplicitMaxSize(BSize(mixer.width, B_SIZE_UNLIMITED));
+    }
 
     // Project-scoped controls apply on this looper; the readout cycles its own
     // timecode format. The transport/loop/mixer buttons keep their default
@@ -336,6 +338,7 @@ void TransportView::UpdateReadout()
     }
 
     m_readout->SetText(text);
+    FitReadout();
 
     bool playing = jackdaw_engine_is_playing();
     bool recording = jackdaw_engine_is_recording();
@@ -357,6 +360,18 @@ void TransportView::UpdateReadout()
     m_record_button->SetValue(recording ? B_CONTROL_ON : B_CONTROL_OFF);
     m_record_button->SetRecordState(recording, punch);
     m_loop_button->SetValue(jackdaw_engine_get_loop_enabled() ? B_CONTROL_ON : B_CONTROL_OFF);
+}
+
+// Size the readout to its text, so the state icon sits right next to it. The
+// width only changes with the timecode format (digits are equal width), and
+// the glue either side of the readout absorbs it.
+void TransportView::FitReadout()
+{
+    float w = ceilf(m_readout->StringWidth(m_readout->Text())) + 6.0f;
+    if (fabsf(w - m_readout->ExplicitMinSize().width) < 0.5f)
+        return;
+    m_readout->SetExplicitMinSize(BSize(w, B_SIZE_UNSET));
+    m_readout->SetExplicitMaxSize(BSize(w, B_SIZE_UNSET));
 }
 
 void TransportView::MouseDown(BPoint where)
