@@ -29,7 +29,17 @@ struct PluginInstance {
     volatile gint active;  /* 1 = processing, 0 = bypassed */
     volatile gint mix_q15; /* wet/dry: 0 = fully dry .. 32768 = fully wet */
     double sample_rate;
-    int max_block;
+    int max_block; /* frames the instance's buffers hold (the engine's capacity) */
+    /* Longest block process() is given: the length announced to the plug-in
+     * (VST3 maxSamplesPerBlock, VST2 effSetBlockSize), <= max_block. It follows
+     * the engine's period, not max_block, because some plug-ins do work in
+     * proportion to the announced length on every call. Changed only by
+     * pluginhost_set_block_size while rt_state is PH_RT_RECONFIG. block and
+     * rt_state are accessed only with g_atomic_int_*. */
+    gint block;
+    /* Who may touch the plug-in's processing (PH_RT_*): the RT thread holds it
+     * for each process call, pluginhost_set_block_size for a re-setup. */
+    gint rt_state;
     Vst3Backend *b;    /* PH_VST3 only */
     Lv2Backend *lv2;   /* PH_LV2 only */
     Vst2Backend *vst2; /* PH_VST2 only */
@@ -46,6 +56,30 @@ struct PluginInstance {
     volatile gint learn_arm;  /* 1 = capturing the next note-on */
     volatile gint learn_note; /* captured pitch, or -1 = none yet */
 };
+
+enum { PH_RT_IDLE = 0, PH_RT_BUSY = 1, PH_RT_RECONFIG = 2 };
+
+/* RT side of the block-size handshake, around each VST3/VST2 process call.
+ * Lock-free: a re-setup in progress, or a block longer than the announced
+ * one (the period just grew and the re-setup has not run yet), skips the
+ * plug-in for this cycle, the same as a block over max_block always did.
+ * The length is read after taking the instance, so it cannot change under
+ * the call. */
+static inline gboolean ph_rt_enter(PluginInstance *inst, int nframes)
+{
+    if (!g_atomic_int_compare_and_exchange(&inst->rt_state, PH_RT_IDLE, PH_RT_BUSY))
+        return FALSE;
+    if (nframes > g_atomic_int_get(&inst->block)) {
+        g_atomic_int_set(&inst->rt_state, PH_RT_IDLE);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static inline void ph_rt_leave(PluginInstance *inst)
+{
+    g_atomic_int_set(&inst->rt_state, PH_RT_IDLE);
+}
 
 /* Speaker-safety net, applied after every plugin process call (both backends,
  * both the effect and instrument paths): a misbehaving plugin must never send
@@ -145,6 +179,13 @@ void ph_lv2_ui_destroy(PluginInstance *inst);
  * helper. ---- */
 
 void ph_vst2_init(double sample_rate, int max_block);
+/* The block length announced to new instances (pluginhost.cpp; see
+ * pluginhost_set_block_size). */
+int ph_block_size(void);
+/* Re-run the VST2 plug-in's setup for a new block length (effMainsChanged
+ * off, effSetBlockSize, on). Only from pluginhost_set_block_size, which holds
+ * the instance away from the RT thread. */
+gboolean ph_vst2_set_block(PluginInstance *inst, int nframes);
 void ph_vst2_shutdown(void);
 /* Enumerate VST2 plug-ins (add-ons/media/vstplugins via find_paths, plus an
  * optional $VST_PATH override) and append catalog entries (key = plug-in path),

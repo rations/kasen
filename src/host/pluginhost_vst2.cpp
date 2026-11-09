@@ -377,7 +377,7 @@ extern "C" void ph_vst2_process_fx_midi(PluginInstance *inst, const PhMidiEvent 
     if (!g_atomic_int_get(&inst->active))
         return; /* bypassed: leave L/R as-is */
     Vst2Backend *b = inst->vst2;
-    if (nframes > b->max_block)
+    if (!ph_rt_enter(inst, nframes))
         return;
 
     int mq = g_atomic_int_get(&inst->mix_q15);
@@ -392,6 +392,7 @@ extern "C" void ph_vst2_process_fx_midi(PluginInstance *inst, const PhMidiEvent 
 
     vst2_send_events(b, ev, n_ev);
     vst2_run(b, L, R, L, R, nframes); /* effect: in-place audio */
+    ph_rt_leave(inst);
 
     if (t0) {
         gint64 d = ph_now_us_i() - t0;
@@ -419,7 +420,7 @@ extern "C" void ph_vst2_process_midi(PluginInstance *inst, const PhMidiEvent *ev
     if (!g_atomic_int_get(&inst->active))
         return; /* bypassed: leave the caller's (silent) buffers as-is */
     Vst2Backend *b = inst->vst2;
-    if (nframes > b->max_block)
+    if (!ph_rt_enter(inst, nframes))
         return;
 
     rt_set_denormal_mode();
@@ -433,6 +434,7 @@ extern "C" void ph_vst2_process_midi(PluginInstance *inst, const PhMidiEvent *ev
         vst2_run(b, b->silence, b->silence, L, R, nframes);
     else
         vst2_run(b, L, R, L, R, nframes);
+    ph_rt_leave(inst);
 
     if (t0) {
         gint64 d = ph_now_us_i() - t0;
@@ -441,6 +443,21 @@ extern "C" void ph_vst2_process_midi(PluginInstance *inst, const PhMidiEvent *ev
     }
 
     ph_safety_clamp(L, R, nframes);
+}
+
+extern "C" gboolean ph_vst2_set_block(PluginInstance *inst, int nframes)
+{
+    if (!inst || !inst->vst2 || !inst->vst2->eff)
+        return FALSE;
+    AEffect *e = inst->vst2->eff;
+    /* Suspended around effSetBlockSize, as at load: the block size is set
+     * while the plug-in is off (effMainsChanged 0). */
+    e->dispatcher(e, effStopProcess, 0, 0, NULL, 0.0f);
+    e->dispatcher(e, effMainsChanged, 0, 0, NULL, 0.0f);
+    e->dispatcher(e, effSetBlockSize, 0, nframes, NULL, 0.0f);
+    e->dispatcher(e, effMainsChanged, 0, 1, NULL, 0.0f);
+    e->dispatcher(e, effStartProcess, 0, 0, NULL, 0.0f);
+    return TRUE;
 }
 
 extern "C" void ph_vst2_reset(PluginInstance *inst)
@@ -747,7 +764,8 @@ extern "C" PluginInstance *ph_vst2_instantiate(const PluginInfo *info)
 
     eff->dispatcher(eff, effOpen, 0, 0, NULL, 0.0f);
     eff->dispatcher(eff, effSetSampleRate, 0, 0, NULL, (float)vst2_sr);
-    eff->dispatcher(eff, effSetBlockSize, 0, b->max_block, NULL, 0.0f);
+    const int block = MIN(ph_block_size(), b->max_block);
+    eff->dispatcher(eff, effSetBlockSize, 0, block, NULL, 0.0f);
     eff->dispatcher(eff, effMainsChanged, 0, 1, NULL, 0.0f);
     eff->dispatcher(eff, effStartProcess, 0, 0, NULL, 0.0f);
 
@@ -764,6 +782,7 @@ extern "C" PluginInstance *ph_vst2_instantiate(const PluginInfo *info)
     pi->mix_q15 = 32768;
     pi->sample_rate = vst2_sr;
     pi->max_block = b->max_block;
+    pi->block = block;
     pi->dry_L = g_new0(float, b->max_block);
     pi->dry_R = g_new0(float, b->max_block);
     pi->learn_arm = 0;

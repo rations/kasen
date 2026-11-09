@@ -43,9 +43,22 @@ typedef struct {
     guint8 data[3];
 } PhMidiEvent;
 
-/* Call once at startup with the engine sample rate / max JACK block. */
+/* Call once at startup with the engine sample rate and the longest block the
+ * engine can run (its buffer capacity: instances allocate for it). */
 void pluginhost_init(double sample_rate, int max_block);
 void pluginhost_shutdown(void);
+
+/* Tell plug-ins the engine's current period: the block length they are set up
+ * for (VST3 maxSamplesPerBlock, VST2 effSetBlockSize), capped at max_block.
+ * Applies to new instances and re-sets-up every live VST3/VST2 one that was
+ * set up for another length (LV2 instances keep max_block). Some plug-ins do
+ * work in proportion to the announced length on every call, so announcing the
+ * capacity instead made them several times slower. While an instance is being
+ * re-set-up, and while the period is longer than its announced length, the RT
+ * path skips it (the signal passes dry). Call from any non-RT thread when the
+ * period changes; it blocks for up to one period per instance plus the
+ * plug-ins' own setup time. */
+void pluginhost_set_block_size(int nframes);
 
 /* `JackDAW --scan-plugin VST3 <path>`: load + describe one plugin bundle in
  * this throwaway process and print its classes to stdout. Call at the very

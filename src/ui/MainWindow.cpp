@@ -379,6 +379,18 @@ void MainWindow::RebuildMixers()
         BMessenger(m_mixer_window).SendMessage(MSG_MIXER_REBUILD);
 }
 
+// The period can change while running (JACK's buffer size, the Media Kit card's
+// buffer size); plug-ins are then set up again for the new length. That waits
+// out each plug-in's current process call, so it runs here, off the RT thread.
+void MainWindow::SyncPluginBlockSize()
+{
+    int bs = (int)jackdaw_engine_get_buffer_size();
+    if (bs < 1 || bs == m_plugin_block)
+        return;
+    m_plugin_block = bs;
+    pluginhost_set_block_size(bs);
+}
+
 void MainWindow::SyncMixers()
 {
     bool in_window = settings_get_uint32("mixer_in_window", 0) != 0;
@@ -1257,6 +1269,7 @@ void MainWindow::MessageReceived(BMessage *message)
             m_transport->UpdateReadout();
             m_timeline->TickUpdate();
             SyncMixers();
+            SyncPluginBlockSize();
             break;
 
         case MSG_ZOOM_IN:

@@ -77,6 +77,14 @@ using namespace Steinberg::Vst;
 
 static double ph_sr = 48000.0;
 static int ph_maxblock = 1024;
+/* Block length announced to new instances (pluginhost_set_block_size), <=
+ * ph_maxblock. Read and written under ph_live_lock. */
+static int ph_block = 1024;
+/* Live VST3/VST2 instances, for pluginhost_set_block_size. Instances are
+ * created and freed on several window threads, so the list and every re-setup
+ * walk over it are under ph_live_lock (never taken on the RT thread). */
+static GMutex ph_live_lock;
+static GPtrArray *ph_live = NULL; /* PluginInstance*, not owned */
 static GList *ph_cat = NULL; /* PluginInfo* */
 static gboolean ph_scanned = FALSE;
 
@@ -1130,6 +1138,9 @@ extern "C" void pluginhost_init(double sample_rate, int max_block)
 {
     ph_sr = sample_rate;
     ph_maxblock = MAX(max_block, 64);
+    g_mutex_lock(&ph_live_lock);
+    ph_block = ph_maxblock; /* until the engine announces its period */
+    g_mutex_unlock(&ph_live_lock);
     ph_ensure_context();
     ph_lv2_init(ph_sr, ph_maxblock);
     ph_vst2_init(ph_sr, ph_maxblock);
@@ -1140,11 +1151,26 @@ extern "C" void pluginhost_shutdown(void)
     g_list_free_full(ph_cat, ph_info_free);
     ph_cat = NULL;
     ph_scanned = FALSE;
+    g_mutex_lock(&ph_live_lock);
+    if (ph_live)
+        g_ptr_array_free(ph_live, TRUE); /* the list only; instances are freed by their tracks */
+    ph_live = NULL;
+    g_mutex_unlock(&ph_live_lock);
     ph_lv2_shutdown();
     ph_vst2_shutdown();
 }
 
 /* ---- Instantiate / free ---- */
+
+extern "C" int ph_block_size(void)
+{
+    g_mutex_lock(&ph_live_lock);
+    int n = ph_block;
+    g_mutex_unlock(&ph_live_lock);
+    return n;
+}
+
+static PluginInstance *ph_vst3_instantiate(const PluginInfo *info);
 
 extern "C" PluginInstance *pluginhost_instantiate(const PluginInfo *info)
 {
@@ -1152,11 +1178,27 @@ extern "C" PluginInstance *pluginhost_instantiate(const PluginInfo *info)
         return NULL;
     if (info->format == PH_LV2)
         return ph_lv2_instantiate(info);
+    PluginInstance *pi = NULL;
     if (info->format == PH_VST2)
-        return ph_vst2_instantiate(info);
-    if (info->format != PH_VST3)
+        pi = ph_vst2_instantiate(info);
+    else if (info->format == PH_VST3)
+        pi = ph_vst3_instantiate(info);
+    if (!pi)
         return NULL;
+    g_mutex_lock(&ph_live_lock);
+    if (!ph_live)
+        ph_live = g_ptr_array_new();
+    g_ptr_array_add(ph_live, pi);
+    g_mutex_unlock(&ph_live_lock);
+    /* The period may have changed while the plug-in was loading. */
+    pluginhost_set_block_size(ph_block_size());
+    return pi;
+}
+
+static PluginInstance *ph_vst3_instantiate(const PluginInfo *info)
+{
     ph_ensure_context();
+    const int block = ph_block_size();
 
     gchar **parts = g_strsplit(info->key, "\n", 2);
     if (!parts[0] || !parts[1]) {
@@ -1217,7 +1259,7 @@ extern "C" PluginInstance *pluginhost_instantiate(const PluginInfo *info)
     ProcessSetup setup;
     setup.processMode = kRealtime;
     setup.symbolicSampleSize = kSample32;
-    setup.maxSamplesPerBlock = ph_maxblock;
+    setup.maxSamplesPerBlock = block;
     setup.sampleRate = ph_sr;
     if (b->processor->setupProcessing(setup) != kResultOk)
         g_warning("pluginhost: '%s' refused setupProcessing", want.c_str());
@@ -1366,6 +1408,7 @@ extern "C" PluginInstance *pluginhost_instantiate(const PluginInfo *info)
     pi->mix_q15 = 32768;
     pi->sample_rate = ph_sr;
     pi->max_block = ph_maxblock;
+    pi->block = block;
     pi->dry_L = g_new0(float, ph_maxblock);
     pi->dry_R = g_new0(float, ph_maxblock);
     pi->learn_arm = 0;
@@ -1378,6 +1421,11 @@ extern "C" void pluginhost_free(PluginInstance *inst)
 {
     if (!inst)
         return;
+    /* Out of the re-setup list first; waits out a re-setup of this instance. */
+    g_mutex_lock(&ph_live_lock);
+    if (ph_live)
+        g_ptr_array_remove_fast(ph_live, inst);
+    g_mutex_unlock(&ph_live_lock);
     if (inst->format == PH_LV2) {
         ph_lv2_free(inst);
         return;
@@ -1426,6 +1474,69 @@ extern "C" void pluginhost_free(PluginInstance *inst)
     g_free(inst->key);
     g_free(inst->category);
     g_free(inst);
+}
+
+/* ---- Block length (pluginhost_set_block_size) ---- */
+
+/* VST3: setupProcessing is only allowed while inactive (ivstaudioprocessor.h),
+ * so processing off, deactivate, set up, activate, processing on. The process
+ * buffers were prepared for ph_maxblock and stay as they are. */
+static gboolean ph_vst3_set_block(PluginInstance *inst, int nframes)
+{
+    Vst3Backend *b = inst->b;
+    if (!b || !b->processor || !b->component)
+        return FALSE;
+    b->processor->setProcessing(false);
+    b->component->setActive(false);
+    ProcessSetup setup;
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = nframes;
+    setup.sampleRate = ph_sr;
+    tresult r = b->processor->setupProcessing(setup);
+    if (b->component->setActive(true) != kResultOk)
+        g_warning("pluginhost: '%s' did not reactivate after a block-size change", inst->name);
+    b->processor->setProcessing(true);
+    return r == kResultOk;
+}
+
+/* Take one instance away from the RT thread (a process call in flight ends
+ * within a period), re-set it up, give it back. */
+static void ph_apply_block(PluginInstance *inst, int nframes)
+{
+    int want = MIN(nframes, inst->max_block);
+    int old = g_atomic_int_get(&inst->block);
+    if (want == old)
+        return;
+    gint64 give_up = g_get_monotonic_time() + 2 * G_USEC_PER_SEC;
+    while (!g_atomic_int_compare_and_exchange(&inst->rt_state, PH_RT_IDLE, PH_RT_RECONFIG)) {
+        if (g_get_monotonic_time() > give_up) {
+            g_warning("pluginhost: '%s' stayed busy; block size left at %d", inst->name, old);
+            return;
+        }
+        g_usleep(500);
+    }
+    gboolean ok = inst->format == PH_VST2 ? ph_vst2_set_block(inst, want)
+                                          : ph_vst3_set_block(inst, want);
+    /* A refused setup keeps the old length if that is shorter: the plug-in is
+     * never handed more than it may have agreed to. */
+    if (ok || want < old)
+        g_atomic_int_set(&inst->block, want);
+    else
+        g_warning("pluginhost: '%s' refused block size %d; keeps %d", inst->name, want, old);
+    g_atomic_int_set(&inst->rt_state, PH_RT_IDLE);
+}
+
+extern "C" void pluginhost_set_block_size(int nframes)
+{
+    if (nframes < 1)
+        return;
+    g_mutex_lock(&ph_live_lock);
+    ph_block = MIN(nframes, ph_maxblock);
+    if (ph_live)
+        for (guint i = 0; i < ph_live->len; i++)
+            ph_apply_block((PluginInstance *)g_ptr_array_index(ph_live, i), ph_block);
+    g_mutex_unlock(&ph_live_lock);
 }
 
 /* ---- RT processing ---- */
@@ -1561,7 +1672,7 @@ extern "C" void pluginhost_process_fx_midi(PluginInstance *inst, const PhMidiEve
     if (!g_atomic_int_get(&inst->active))
         return; /* bypassed: leave L/R as-is */
     Vst3Backend *b = inst->b;
-    if (nframes > b->max_block)
+    if (!ph_rt_enter(inst, nframes))
         return;
 
     int mq = g_atomic_int_get(&inst->mix_q15);
@@ -1612,6 +1723,7 @@ extern "C" void pluginhost_process_fx_midi(PluginInstance *inst, const PhMidiEve
         memcpy(R, b->data.outputs[0].channelBuffers32[oc > 1 ? 1 : 0],
                sizeof(float) * (size_t)nframes);
     }
+    ph_rt_leave(inst);
 
     if (t0) {
         gint64 d = ph_now_us_i() - t0;
@@ -1654,7 +1766,7 @@ extern "C" void pluginhost_process_midi(PluginInstance *inst, const PhMidiEvent 
     if (!g_atomic_int_get(&inst->active))
         return; /* bypassed: leave the caller's (silent) buffers as-is */
     Vst3Backend *b = inst->b;
-    if (nframes > b->max_block)
+    if (!ph_rt_enter(inst, nframes))
         return;
 
     rt_set_denormal_mode();
@@ -1698,6 +1810,7 @@ extern "C" void pluginhost_process_midi(PluginInstance *inst, const PhMidiEvent 
         memcpy(R, b->data.outputs[0].channelBuffers32[oc > 1 ? 1 : 0],
                sizeof(float) * (size_t)nframes);
     }
+    ph_rt_leave(inst);
 
     if (t0) {
         gint64 d = ph_now_us_i() - t0;

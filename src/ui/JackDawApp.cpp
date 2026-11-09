@@ -48,6 +48,8 @@ void JackDawApp::ReadyToRun()
     // come after the engine knows its period.
     pluginhost_init((double)jackdaw_engine_get_sample_rate(),
                     (int)jackdaw_engine_get_max_buffer_size());
+    // ...while plug-ins are told the period itself (MainWindow follows changes).
+    pluginhost_set_block_size((int)jackdaw_engine_get_buffer_size());
     RunStartupScan();
     m_main_window->Show();
 

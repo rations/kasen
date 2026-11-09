@@ -125,6 +125,7 @@ private:
     // Mixer (docked pane + optional detached window).
     void ApplyMixerState();               // show/hide dock vs. window
     void SyncMixers();                    // per-tick control/meter refresh
+    void SyncPluginBlockSize();           // per-tick: follow a period change
     JackDawTrack *TrackForSlot(int slot); // map a mixer/strip slot to its track
 
     JackDawProject *m_project; // borrowed; main() owns the reference
@@ -132,6 +133,7 @@ private:
     TransportView *m_transport;
     TimelineView *m_timeline;
     BMessageRunner *m_tick_runner;
+    int m_plugin_block = 0; // period last announced to plug-ins (SyncPluginBlockSize)
 
     MetroVolumeWindow *m_metro_volume_window; // NULL until first opened
     CountInWindow *m_countin_window;          // NULL until first opened
