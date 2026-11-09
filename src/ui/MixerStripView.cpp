@@ -63,15 +63,20 @@ MixerStripView::MixerStripView(JackDawProject *project, JackDawTrack *track, con
     m_mute->SetActiveColor((rgb_color){230, 126, 34, 255}, (rgb_color){255, 255, 255, 255});
     m_mute->SetExplicitMinSize(btn);
     m_mute->SetExplicitMaxSize(btn);
+    m_mute->SetFont(be_bold_font);
+    m_mute->SetToolTip("Mute");
     if (track) {
         m_solo = new StateButton("S", "S", new BMessage(MSG_M_SOLO));
         m_solo->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
         m_solo->SetActiveColor((rgb_color){255, 224, 0, 255}, (rgb_color){16, 16, 16, 255});
         m_solo->SetExplicitMinSize(btn);
         m_solo->SetExplicitMaxSize(btn);
+        m_solo->SetFont(be_bold_font);
+        m_solo->SetToolTip("Solo");
         // Fx: opens this track's FX window (via MainWindow, shared with the track
         // strip); tinted blue whenever the track carries an effect chain.
-        m_fx = new StateButton("Fx", "Fx", new BMessage(MSG_M_FX));
+        m_fx = new StateButton("Fx", "FX", new BMessage(MSG_M_FX));
+        m_fx->SetFont(be_bold_font);
         m_fx->SetActiveColor((rgb_color){41, 128, 185, 255}, (rgb_color){255, 255, 255, 255});
         m_fx->SetActiveIgnoresValue(true); // momentary: blue tracks fx_count, not the click
         m_fx->SetToolTip("Effects (VST3 chain)");

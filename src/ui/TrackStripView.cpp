@@ -45,18 +45,28 @@ enum {
 TrackStripView::TrackStripView(JackDawProject *project, JackDawTrack *track, const BMessenger &main)
     : BView("track_strip", B_WILL_DRAW | B_FRAME_EVENTS), m_project(project), m_track(track),
       m_main(main), m_name(NULL), m_arm(NULL), m_mute(NULL), m_solo(NULL), m_stereo(NULL),
-      m_fx(NULL), m_vol(NULL), m_pan(NULL), m_input(NULL), m_vu(NULL),
-      m_state_handler(0), m_routing_handler(0), m_maybe_drag(false), m_did_drag(false),
-      m_drag_start_y(0.0f), m_drag_from(-1)
+      m_fx(NULL), m_vol(NULL), m_pan(NULL), m_input(NULL), m_vu(NULL), m_state_handler(0),
+      m_routing_handler(0), m_maybe_drag(false), m_did_drag(false), m_drag_start_y(0.0f),
+      m_drag_from(-1)
 {
     m_name =
         new BTextControl("name", NULL, jackdaw_track_get_name(track), new BMessage(MSG_S_NAME));
 
-    m_arm = new StateButton("A", "A", new BMessage(MSG_S_ARM));
+    // Arm and mono/stereo are drawn glyphs (record dot, one or two rings);
+    // Mute, Solo and FX keep their letters, in bold.
+    m_arm = new StateButton("A", "", new BMessage(MSG_S_ARM));
+    m_arm->SetGlyph(StateButton::GLYPH_RECORD);
+    m_arm->SetToolTip("Arm for recording");
     m_mute = new StateButton("M", "M", new BMessage(MSG_S_MUTE));
+    m_mute->SetToolTip("Mute");
     m_solo = new StateButton("S", "S", new BMessage(MSG_S_SOLO));
-    m_stereo = new BButton("Mo", "Mo", new BMessage(MSG_S_STEREO));
-    m_fx = new StateButton("Fx", "Fx", new BMessage(MSG_S_FX));
+    m_solo->SetToolTip("Solo");
+    m_stereo = new StateButton("Mo", "", new BMessage(MSG_S_STEREO));
+    m_stereo->SetGlyph(StateButton::GLYPH_MONO);
+    m_stereo->SetToolTip("Mono or stereo input");
+    m_fx = new StateButton("Fx", "FX", new BMessage(MSG_S_FX));
+    for (StateButton *b : {m_mute, m_solo, m_fx})
+        b->SetFont(be_bold_font);
     m_arm->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_mute->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_solo->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
@@ -69,8 +79,7 @@ TrackStripView::TrackStripView(JackDawProject *project, JackDawTrack *track, con
     m_solo->SetActiveColor((rgb_color){255, 224, 0, 255}, (rgb_color){16, 16, 16, 255});
     m_fx->SetActiveColor((rgb_color){41, 128, 185, 255}, (rgb_color){255, 255, 255, 255});
     m_fx->SetActiveIgnoresValue(true); // momentary: blue tracks fx_count, not the click
-    for (BButton *b :
-         {(BButton *)m_arm, (BButton *)m_mute, (BButton *)m_solo, m_stereo, (BButton *)m_fx}) {
+    for (StateButton *b : {m_arm, m_mute, m_solo, m_stereo, m_fx}) {
         b->SetExplicitMinSize(BSize(24.0f, 20.0f));
         b->SetExplicitMaxSize(BSize(30.0f, 20.0f));
     }
@@ -192,7 +201,9 @@ void TrackStripView::SyncFromTrack()
     bool instrument = jackdaw_track_is_instrument(m_track);
     bool stereo = jackdaw_track_is_stereo(m_track);
     m_stereo->SetValue(stereo ? B_CONTROL_ON : B_CONTROL_OFF);
-    m_stereo->SetLabel(instrument ? "MIDI" : (stereo ? "St" : "Mo"));
+    m_stereo->SetLabel(instrument ? "MIDI" : "");
+    m_stereo->SetGlyph(instrument ? StateButton::GLYPH_LABEL
+                                  : (stereo ? StateButton::GLYPH_STEREO : StateButton::GLYPH_MONO));
     m_stereo->SetEnabled(!instrument); // mono/stereo is an audio-track concept
     double trim_db = (jackdaw_track_get_trim(m_track) > 0.0001f)
                          ? 20.0 * log10((double)jackdaw_track_get_trim(m_track))
@@ -216,7 +227,7 @@ void TrackStripView::SetPeaks(float l, float r)
 void TrackStripView::ApplyStereo(bool stereo)
 {
     jackdaw_engine_set_track_stereo(m_track, stereo);
-    m_stereo->SetLabel(stereo ? "St" : "Mo");
+    m_stereo->SetGlyph(stereo ? StateButton::GLYPH_STEREO : StateButton::GLYPH_MONO);
 
     if (stereo) {
         // Auto-pair the right channel with the capture port following the

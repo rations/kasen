@@ -91,31 +91,42 @@ private:
 TransportView::TransportView(JackDawProject *project)
     : BView("transport", B_WILL_DRAW), m_project(project), m_timemode(TIMEMODE_REALLONG)
 {
-    m_rtz_button = new BButton("|◀", new BMessage(MSG_TRANSPORT_RTZ));
-    m_step_back = new BButton("|<<", new BMessage(MSG_TRANSPORT_STEP_BACK));
-    m_step_fwd = new BButton(">>|", new BMessage(MSG_TRANSPORT_STEP_FWD));
-    m_next_button = new BButton("▶|", new BMessage(MSG_TRANSPORT_NEXT_BOUNDARY));
-    // Loop and Record keep their glyph as a label for layout sizing only; the
-    // glyph itself is vector-drawn (StateButton::GLYPH_*), so the label text is
-    // never painted (the "⟳" tofu the default font renders never appears).
-    m_play_button = new StateButton("play", "▶", new BMessage(MSG_TRANSPORT_PLAY));
-    m_loop_button = new StateButton("loop", "⟳", new BMessage(MSG_TRANSPORT_LOOP));
-    m_pause_button = new BButton("||", new BMessage(MSG_TRANSPORT_PAUSE));
-    m_stop_button = new BButton("■", new BMessage(MSG_TRANSPORT_STOP));
+    // Vector-glyph transport buttons (StateButton draws them as filled
+    // shapes, so they never depend on a font carrying the symbols).
+    m_rtz_button = StateButton::MakeGlyphButton("rtz", StateButton::GLYPH_RTZ,
+                                                new BMessage(MSG_TRANSPORT_RTZ), "Go to start");
+    m_step_back = StateButton::MakeGlyphButton("step_back", StateButton::GLYPH_STEP_BACK,
+                                               new BMessage(MSG_TRANSPORT_STEP_BACK), "Step back");
+    m_step_fwd = StateButton::MakeGlyphButton("step_fwd", StateButton::GLYPH_STEP_FWD,
+                                              new BMessage(MSG_TRANSPORT_STEP_FWD), "Step forward");
+    m_next_button =
+        StateButton::MakeGlyphButton("next", StateButton::GLYPH_NEXT,
+                                     new BMessage(MSG_TRANSPORT_NEXT_BOUNDARY), "Next boundary");
+    m_play_button = StateButton::MakeGlyphButton("play", StateButton::GLYPH_PLAY,
+                                                 new BMessage(MSG_TRANSPORT_PLAY), "Play");
+    m_loop_button = StateButton::MakeGlyphButton("loop", StateButton::GLYPH_LOOP,
+                                                 new BMessage(MSG_TRANSPORT_LOOP), "Loop");
+    m_pause_button = StateButton::MakeGlyphButton("pause", StateButton::GLYPH_PAUSE,
+                                                  new BMessage(MSG_TRANSPORT_PAUSE), "Pause");
+    m_stop_button = StateButton::MakeGlyphButton("stop", StateButton::GLYPH_STOP,
+                                                 new BMessage(MSG_TRANSPORT_STOP), "Stop");
+    // Record keeps its right-click menu (Normal / Punch In/Out): a ContextButton
+    // sized like the rest.
     m_record_button =
-        new ContextButton("record", "●", new BMessage(MSG_TRANSPORT_RECORD), MSG_RECORD_MENU);
+        new ContextButton("record", "M", new BMessage(MSG_TRANSPORT_RECORD), MSG_RECORD_MENU);
+    m_record_button->SetGlyph(StateButton::GLYPH_RECORD);
+    m_record_button->SetToolTip("Record (right-click: Normal or Punch In/Out)");
+    m_record_button->SetExplicitMinSize(m_play_button->ExplicitMinSize());
+    m_record_button->SetExplicitMaxSize(m_play_button->ExplicitMaxSize());
 
     m_play_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_loop_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_record_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
 
-    // State colours (match the original: Play green, Loop light-green with a
-    // drawn loop arrow so it never depends on a font glyph, Record red with a
-    // ring/bullseye glyph that differs between normal and punch modes).
+    // State colours: Play green, Loop light green, Record red (dot, or dot in
+    // a ring in punch mode).
     m_play_button->SetActiveColor((rgb_color){46, 139, 87, 255}, (rgb_color){255, 255, 255, 255});
-    m_loop_button->SetGlyph(StateButton::GLYPH_LOOP);
     m_loop_button->SetActiveColor((rgb_color){140, 230, 140, 255}, (rgb_color){16, 16, 16, 255});
-    m_record_button->SetGlyph(StateButton::GLYPH_RECORD);
     m_record_button->SetActiveColor((rgb_color){192, 57, 43, 255}, (rgb_color){255, 255, 255, 255});
 
     ClickableStringView *readout =
