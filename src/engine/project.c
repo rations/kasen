@@ -876,6 +876,10 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
 
     GKeyFile *kf = g_key_file_new();
     g_key_file_set_double(kf, "project", "bpm", p->bpm);
+    /* The top comment becomes the first line, JACKDAW_PROJECT_HEADER (GKeyFile
+     * writes it as '#' + the text). */
+    if (!g_key_file_set_comment(kf, NULL, NULL, JACKDAW_PROJECT_HEADER + 1, NULL))
+        g_warning("project: could not write the file header");
     g_key_file_set_integer(kf, "project", "beats_per_bar", (gint)p->beats_per_bar);
     g_key_file_set_integer(kf, "project", "beat_unit", (gint)p->beat_unit);
     g_key_file_set_double(kf, "project", "master_volume", p->master_volume);

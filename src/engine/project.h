@@ -144,6 +144,12 @@ const gchar *jackdaw_project_get_file(JackDawProject *p);
 
 /* Project file extension: <name>/<name>.kasen. */
 #define JACKDAW_PROJECT_EXT ".kasen"
+/* The project file's MIME type (registered by the app at startup, set on every
+ * saved file) and the first line every saved file starts with, which the
+ * type's sniffer rule matches, so a project copied without its attributes is
+ * still recognised. */
+#define JACKDAW_PROJECT_MIME "application/x-vnd.kasen-project"
+#define JACKDAW_PROJECT_HEADER "# Kasen project"
 
 /* ---- Save / load ----
  * A project is a self-contained bundle directory <name>/ holding <name>.kasen (a

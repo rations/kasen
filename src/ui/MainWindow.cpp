@@ -14,6 +14,8 @@
 #include <MessageFilter.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
+#include <Node.h>
+#include <NodeInfo.h>
 #include <Path.h>
 #include <PopUpMenu.h>
 #include <String.h>
@@ -740,8 +742,16 @@ bool MainWindow::SaveProjectTo(const char *path)
     }
     UpdateTitle();
     const gchar *saved = jackdaw_project_get_file(m_project);
-    if (saved && *saved)
+    if (saved && *saved) {
         settings_set_string("last_project", saved);
+        // Tag the file as a Kasen project (save replaces the file, so every
+        // save does this), so Tracker shows its icon and opens it in Kasen.
+        BNode node(saved);
+        BNodeInfo info(&node);
+        if (node.InitCheck() != B_OK || info.InitCheck() != B_OK ||
+            info.SetType(JACKDAW_PROJECT_MIME) != B_OK)
+            g_warning("could not set the file type of %s", saved);
+    }
     settings_save();
     return true;
 }

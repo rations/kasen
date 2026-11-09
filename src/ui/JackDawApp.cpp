@@ -3,10 +3,16 @@
 #include <glib.h>
 
 #include <Alert.h>
+#include <Entry.h>
 #include <Messenger.h>
+#include <MimeType.h>
+#include <Path.h>
+
+#include <string.h>
 
 #include "engine/jackdaw-engine.h"
 #include "host/pluginhost.h"
+#include "icons/IconData.h"
 #include "MainWindow.h"
 #include "Messages.h"
 #include "ScanWindow.h"
@@ -24,15 +30,66 @@ void JackDawApp::ArgvReceived(int32 argc, char **argv)
 {
     if (argc < 2 || !argv[1] || !argv[1][0])
         return;
+    OpenProject(argv[1]);
+}
+
+// Tracker sends the file as an entry_ref. Kasen is single-launch, so a project
+// opened while it runs arrives here rather than starting a second engine.
+void JackDawApp::RefsReceived(BMessage *message)
+{
+    entry_ref ref;
+    if (message->FindRef("refs", 0, &ref) != B_OK)
+        return;
+    BPath path(&ref);
+    if (path.InitCheck() != B_OK)
+        return;
+    OpenProject(path.Path());
+}
+
+void JackDawApp::OpenProject(const char *path)
+{
     if (m_main_window == NULL) {
-        m_open_path = argv[1];
+        m_open_path = path;
         return;
     }
     // Already running: ask about unsaved changes like File -> Open does.
     BMessage open(MSG_OPEN_PROJECT_PATH);
-    open.AddString("path", argv[1]);
+    open.AddString("path", path);
     open.AddBool("ask", true);
     m_main_window->PostMessage(&open);
+}
+
+// The .kasen project type: description, extension, sniffer rule (the header
+// line every save writes), icon, and Kasen as the preferred app. Set on every
+// launch so a changed icon or rule reaches an existing MIME database. Failure
+// only costs Tracker integration, so it is logged, not shown.
+void JackDawApp::RegisterProjectType()
+{
+    BMimeType type(JACKDAW_PROJECT_MIME);
+    if (type.InitCheck() != B_OK) {
+        g_warning("project file type: bad MIME string");
+        return;
+    }
+    status_t err = B_OK;
+    if (!type.IsInstalled())
+        err = type.Install();
+    if (err == B_OK)
+        err = type.SetShortDescription("Kasen project");
+    if (err == B_OK)
+        err = type.SetLongDescription("Kasen multitrack project");
+    if (err == B_OK) {
+        BMessage extensions;
+        extensions.AddString("extensions", JACKDAW_PROJECT_EXT + 1);
+        err = type.SetFileExtensions(&extensions);
+    }
+    if (err == B_OK)
+        err = type.SetSnifferRule("0.80 ('" JACKDAW_PROJECT_HEADER "')");
+    if (err == B_OK)
+        err = type.SetIcon(kIcon_kasen_project, sizeof(kIcon_kasen_project));
+    if (err == B_OK)
+        err = type.SetPreferredApp("application/x-vnd.kasen");
+    if (err != B_OK)
+        g_warning("project file type: could not register: %s", strerror(err));
 }
 
 void JackDawApp::ReadyToRun()
@@ -40,6 +97,7 @@ void JackDawApp::ReadyToRun()
     // Construct the window first so its engine-event hook is in place, then
     // bring the engine up, then show. All of this runs on the app thread; the
     // window's looper thread starts at Show().
+    RegisterProjectType();
     m_main_window = new MainWindow(m_project);
     if (jackdaw_engine_init(m_project))
         g_warning("audio engine failed to start — running without audio");
