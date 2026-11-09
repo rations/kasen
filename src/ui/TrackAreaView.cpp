@@ -1,5 +1,6 @@
 #include "TrackAreaView.h"
 
+#include <Cursor.h>
 #include <InterfaceDefs.h>
 #include <MenuItem.h>
 #include <PopUpMenu.h>
@@ -142,9 +143,127 @@ void TrackAreaView::DetachedFromWindow()
     BView::DetachedFromWindow();
 }
 
+float TrackAreaView::RowHeight(int row) const
+{
+    JackDawProject *p = m_timeline->Project();
+    if (row < 0 || (guint)row >= jackdaw_project_track_count(p))
+        return kTimelineTrackHeight;
+    JackDawTrack *t = jackdaw_project_get_track(p, (guint)row);
+    if (!t || t->ui_height <= 0)
+        return kTimelineTrackHeight;
+    return (float)CLAMP(t->ui_height, JACKDAW_TRACK_HEIGHT_MIN, JACKDAW_TRACK_HEIGHT_MAX);
+}
+
+float TrackAreaView::RowTop(int row) const
+{
+    float y = 0.0f;
+    for (int i = 0; i < row; i++)
+        y += RowHeight(i);
+    return y;
+}
+
 float TrackAreaView::ContentHeight() const
 {
-    return (float)m_timeline->Project()->tracks->len * kTimelineTrackHeight;
+    return RowTop((int)jackdaw_project_track_count(m_timeline->Project()));
+}
+
+int TrackAreaView::DropGapAtY(float y) const
+{
+    int n = (int)jackdaw_project_track_count(m_timeline->Project());
+    float cy = y + m_scroll_y;
+    int best = 0;
+    float best_d = fabsf(cy);
+    float top = 0.0f;
+    for (int k = 1; k <= n; k++) {
+        top += RowHeight(k - 1);
+        float d = fabsf(cy - top);
+        if (d < best_d) {
+            best_d = d;
+            best = k;
+        }
+    }
+    return best;
+}
+
+// How close (px) to a row's bottom edge a press starts a height drag.
+static const float kRowEdgeGrab = 3.0f;
+
+int TrackAreaView::RowEdgeAtY(float y) const
+{
+    int n = (int)jackdaw_project_track_count(m_timeline->Project());
+    float cy = y + m_scroll_y;
+    float bottom = 0.0f;
+    for (int i = 0; i < n; i++) {
+        bottom += RowHeight(i);
+        if (fabsf(cy - bottom) <= kRowEdgeGrab)
+            return i;
+        if (bottom > cy + kRowEdgeGrab)
+            break;
+    }
+    return -1;
+}
+
+void TrackAreaView::BeginRowResize(int row, float y, bool all)
+{
+    int n = (int)jackdaw_project_track_count(m_timeline->Project());
+    if (row < 0 || row >= n)
+        return;
+    m_resize_row = row;
+    m_resize_all = all;
+    m_resize_y0 = y;
+    m_resize_h0.clear();
+    for (int i = 0; i < n; i++)
+        m_resize_h0.push_back((int)RowHeight(i));
+}
+
+void TrackAreaView::RowResizeTo(float y)
+{
+    if (m_resize_row < 0)
+        return;
+    JackDawProject *p = m_timeline->Project();
+    int n = (int)jackdaw_project_track_count(p);
+    int dy = (int)floorf(y - m_resize_y0 + 0.5f);
+    bool changed = false;
+    for (int i = 0; i < n && i < (int)m_resize_h0.size(); i++) {
+        if (!m_resize_all && i != m_resize_row)
+            continue;
+        int h = CLAMP(m_resize_h0[i] + dy, JACKDAW_TRACK_HEIGHT_MIN, JACKDAW_TRACK_HEIGHT_MAX);
+        JackDawTrack *t = jackdaw_project_get_track(p, (guint)i);
+        int stored = (h == (int)kTimelineTrackHeight) ? 0 : h;
+        if (t && t->ui_height != stored) {
+            t->ui_height = stored;
+            changed = true;
+        }
+    }
+    if (!changed)
+        return;
+    RepositionStrips();
+    m_timeline->UpdateVScrollBar();
+    Invalidate();
+}
+
+void TrackAreaView::EndRowResize()
+{
+    m_resize_row = -1;
+    m_resize_h0.clear();
+}
+
+/* The north-south resize cursor shown over a row's bottom edge. One shared
+ * instance, made on first use (app_server must be up) and kept for the life
+ * of the app: SetViewCursor hands app_server the cursor's token, so it has to
+ * outlive the views using it. */
+const BCursor *RowResizeCursor()
+{
+    static BCursor *cursor = new BCursor(B_CURSOR_ID_RESIZE_NORTH_SOUTH);
+    return cursor;
+}
+
+void TrackAreaView::ShowResizeCursor(bool on)
+{
+    if (on == m_resize_cursor)
+        return;
+    m_resize_cursor = on;
+    SetViewCursor(on ? RowResizeCursor() : B_CURSOR_SYSTEM_DEFAULT);
 }
 
 void TrackAreaView::RebuildStrips()
@@ -180,10 +299,12 @@ void TrackAreaView::RebuildStrips()
 void TrackAreaView::RepositionStrips()
 {
     float y = -m_scroll_y;
+    int i = 0;
     for (TrackStripView *s : m_strips) {
+        float h = RowHeight(i++);
         s->MoveTo(0.0f, y);
-        s->ResizeTo(kTimelineHeaderWidth - 1.0f, kTimelineTrackHeight - 1.0f);
-        y += kTimelineTrackHeight;
+        s->ResizeTo(kTimelineHeaderWidth - 1.0f, h - 1.0f);
+        y += h;
     }
 }
 
@@ -228,10 +349,17 @@ void TrackAreaView::SetDropGap(int gap)
 
 int TrackAreaView::RowAtY(float y) const
 {
-    int row = (int)((y + m_scroll_y) / kTimelineTrackHeight);
-    if (row < 0 || (guint)row >= jackdaw_project_track_count(m_timeline->Project()))
+    float cy = y + m_scroll_y;
+    if (cy < 0.0f)
         return -1;
-    return row;
+    int n = (int)jackdaw_project_track_count(m_timeline->Project());
+    float top = 0.0f;
+    for (int i = 0; i < n; i++) {
+        top += RowHeight(i);
+        if (cy < top)
+            return i;
+    }
+    return -1;
 }
 
 /* -----------------------------------------------------------------------
@@ -942,8 +1070,9 @@ void TrackAreaView::DrawWaveforms(BRect lane)
     std::vector<float> pk_min, pk_max;
 
     for (guint i = 0; i < n; i++) {
-        float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
-        float row_bot = row_top + kTimelineTrackHeight - 1.0f;
+        float row_h = RowHeight((int)i);
+        float row_top = RowTop((int)i) - m_scroll_y;
+        float row_bot = row_top + row_h - 1.0f;
         if (row_bot < lane.top || row_top > lane.bottom)
             continue;
         JackDawTrack *t = jackdaw_project_get_track(p, i);
@@ -952,7 +1081,7 @@ void TrackAreaView::DrawWaveforms(BRect lane)
             continue;
 
         float band_y0 = row_top + 3.0f;
-        float band_h = kTimelineTrackHeight - 6.0f;
+        float band_h = row_h - 6.0f;
 
         for (guint ri = 0; ri < regs->len; ri++) {
             ClipRegion *r = (ClipRegion *)g_ptr_array_index(regs, ri);
@@ -1126,8 +1255,9 @@ void TrackAreaView::DrawRecordOverlay(BRect lane)
     std::vector<float> pk_min, pk_max;
 
     for (guint i = 0; i < n; i++) {
-        float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
-        float row_bot = row_top + kTimelineTrackHeight - 1.0f;
+        float row_h = RowHeight((int)i);
+        float row_top = RowTop((int)i) - m_scroll_y;
+        float row_bot = row_top + row_h - 1.0f;
         if (row_bot < lane.top || row_top > lane.bottom)
             continue;
         JackDawTrack *t = jackdaw_project_get_track(p, i);
@@ -1176,7 +1306,7 @@ void TrackAreaView::DrawRecordOverlay(BRect lane)
 
         int draw_ch = t->rec_peak_channels == 2 ? 2 : 1;
         float band_y0 = row_top + 3.0f;
-        float band_h = kTimelineTrackHeight - 6.0f;
+        float band_h = row_h - 6.0f;
         float sub_h = band_h / (float)draw_ch;
         for (int cc = 0; cc < draw_ch; cc++) {
             WaveLane wl = {band_y0 + (float)cc * sub_h, sub_h, m_wave_vzoom, 1.0f};
@@ -1210,8 +1340,9 @@ void TrackAreaView::DrawMidiNotes(BRect lane)
     off_t view1 = start + (off_t)((double)lane.Width() * spp) + 1;
 
     for (guint i = 0; i < n; i++) {
-        float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
-        float row_bot = row_top + kTimelineTrackHeight - 1.0f;
+        float row_h = RowHeight((int)i);
+        float row_top = RowTop((int)i) - m_scroll_y;
+        float row_bot = row_top + row_h - 1.0f;
         if (row_bot < lane.top || row_top > lane.bottom)
             continue;
         JackDawTrack *t = jackdaw_project_get_track(p, i);
@@ -1222,7 +1353,7 @@ void TrackAreaView::DrawMidiNotes(BRect lane)
             continue;
 
         float band_y0 = row_top + 3.0f;
-        float band_h = kTimelineTrackHeight - 6.0f;
+        float band_h = row_h - 6.0f;
 
         for (guint ri = 0; ri < regs->len; ri++) {
             MidiRegion *r = (MidiRegion *)g_ptr_array_index(regs, ri);
@@ -1309,8 +1440,9 @@ void TrackAreaView::DrawMidiRecOverlay(BRect lane)
     off_t view1 = start + (off_t)((double)lane.Width() * spp) + 1;
 
     for (guint i = 0; i < n; i++) {
-        float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
-        float row_bot = row_top + kTimelineTrackHeight - 1.0f;
+        float row_h = RowHeight((int)i);
+        float row_top = RowTop((int)i) - m_scroll_y;
+        float row_bot = row_top + row_h - 1.0f;
         if (row_bot < lane.top || row_top > lane.bottom)
             continue;
         JackDawTrack *t = jackdaw_project_get_track(p, i);
@@ -1323,7 +1455,7 @@ void TrackAreaView::DrawMidiRecOverlay(BRect lane)
             continue;
 
         float band_y0 = row_top + 3.0f;
-        float band_h = kTimelineTrackHeight - 6.0f;
+        float band_h = row_h - 6.0f;
         SetHighColor(kMidiRecNote);
         for (guint k = 0; k < cnt; k++) {
             if (rn[k].end_frame < start || rn[k].start_frame > view1)
@@ -1363,8 +1495,8 @@ void TrackAreaView::Draw(BRect updateRect)
 
     // Per-row selection tint + bottom separators (lane side only).
     for (guint i = 0; i < n; i++) {
-        float top = (float)i * kTimelineTrackHeight - m_scroll_y;
-        float bot = top + kTimelineTrackHeight - 1.0f;
+        float top = RowTop((int)i) - m_scroll_y;
+        float bot = top + RowHeight((int)i) - 1.0f;
         if (bot < lane.top || top > lane.bottom)
             continue;
         if (jackdaw_project_is_selected(p, jackdaw_project_get_track(p, i))) {
@@ -1449,7 +1581,7 @@ void TrackAreaView::Draw(BRect updateRect)
     // (right of the strip column): the opaque strip children cover the header
     // column, so the line would otherwise be hidden behind them.
     if (m_drop_gap >= 0) {
-        float gy = (float)m_drop_gap * kTimelineTrackHeight - m_scroll_y;
+        float gy = RowTop(m_drop_gap) - m_scroll_y;
         SetHighColor(60, 150, 230);
         FillRect(BRect(lane.left, gy - 1.0f, lane.right, gy + 1.0f));
     }
@@ -1464,6 +1596,17 @@ void TrackAreaView::MouseDown(BPoint where)
         msg->FindInt32("buttons", &buttons);
         msg->FindInt32("modifiers", &mods);
         msg->FindInt32("clicks", &clicks);
+    }
+
+    // A press on a row's bottom edge drags that row's height (Ctrl/Cmd: every
+    // row). Strips forward presses on their own bottom edge here too.
+    if (!(buttons & B_SECONDARY_MOUSE_BUTTON)) {
+        int edge = RowEdgeAtY(where.y);
+        if (edge >= 0) {
+            BeginRowResize(edge, where.y, (mods & (B_COMMAND_KEY | B_CONTROL_KEY)) != 0);
+            SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+            return;
+        }
     }
 
     if (where.x < kTimelineHeaderWidth) {
@@ -1572,8 +1715,15 @@ void TrackAreaView::MouseDown(BPoint where)
 
 void TrackAreaView::MouseMoved(BPoint where, uint32 code, const BMessage *dragMessage)
 {
-    (void)code;
     (void)dragMessage;
+
+    if (m_resize_row >= 0) {
+        RowResizeTo(where.y);
+        return;
+    }
+    // Resize cursor over a row's bottom edge while nothing else is dragging.
+    bool idle = !m_moving && !m_move_armed && !m_selecting;
+    ShowResizeCursor(code != B_EXITED_VIEW && idle && RowEdgeAtY(where.y) >= 0);
 
     // An armed press becomes a real move once the pointer travels past a small
     // threshold in either axis (horizontal = slide, vertical = relocate track).
@@ -1649,6 +1799,10 @@ void TrackAreaView::MouseMoved(BPoint where, uint32 code, const BMessage *dragMe
 
 void TrackAreaView::MouseUp(BPoint where)
 {
+    if (m_resize_row >= 0) {
+        EndRowResize();
+        return;
+    }
     // Finalize a move: re-sort + republish every touched track, one combined undo.
     if (m_moving) {
         m_moving = false;

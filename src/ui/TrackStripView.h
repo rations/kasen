@@ -68,6 +68,8 @@ private:
     // past a threshold the row can be dropped at a new position.
     bool m_maybe_drag;
     bool m_did_drag;
-    float m_drag_start_y; // strip-local y at press
-    int m_drag_from;      // track's array index at press
+    float m_drag_start_y;         // strip-local y at press
+    int m_drag_from;              // track's array index at press
+    bool m_resizing = false;      // dragging the row height (bottom edge)
+    bool m_resize_cursor = false; // showing the resize cursor
 };

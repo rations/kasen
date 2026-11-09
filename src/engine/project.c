@@ -900,6 +900,8 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
         g_key_file_set_double(kf, grp, "trim", jackdaw_track_get_trim(t));
         g_key_file_set_double(kf, grp, "fader", jackdaw_track_get_fader(t));
         g_key_file_set_double(kf, grp, "pan", jackdaw_track_get_pan(t));
+        if (t->ui_height > 0)
+            g_key_file_set_integer(kf, grp, "height", t->ui_height);
         gint flags = (jackdaw_track_is_armed(t) ? 1 : 0) | (jackdaw_track_is_muted(t) ? 2 : 0) |
                      (jackdaw_track_is_soloed(t) ? 4 : 0);
         g_key_file_set_integer(kf, grp, "flags", flags);
@@ -1089,6 +1091,10 @@ gboolean jackdaw_project_load(JackDawProject *p, const gchar *path)
         jackdaw_track_set_trim(t, (gfloat)kf_dbl(kf, grp, "trim", 1.0));
         jackdaw_track_set_fader(t, (gfloat)kf_dbl(kf, grp, "fader", legacy_vol));
         jackdaw_track_set_pan(t, (gfloat)kf_dbl(kf, grp, "pan", 0.0));
+        /* Lane height (UI): 0/absent = default; anything else is clamped. */
+        gint ui_h = kf_int(kf, grp, "height", 0);
+        t->ui_height =
+            ui_h <= 0 ? 0 : CLAMP(ui_h, JACKDAW_TRACK_HEIGHT_MIN, JACKDAW_TRACK_HEIGHT_MAX);
         gint flags = kf_int(kf, grp, "flags", 0);
         jackdaw_track_set_armed(t, (flags & 1) != 0);
         jackdaw_track_set_muted(t, (flags & 2) != 0);

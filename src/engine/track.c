@@ -143,6 +143,7 @@ static void jackdaw_track_init(JackDawTrack *t)
     t->rec_acc_n = 0;
     t->rec_peak_started = FALSE;
     t->played_frames = 0;
+    t->ui_height = 0;
 
     t->fx_list = g_ptr_array_new();
     t->rt_chain = NULL;

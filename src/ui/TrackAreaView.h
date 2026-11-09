@@ -9,8 +9,12 @@
 #include "engine/clipregion.h"
 #include "engine/project.h"
 
+class BCursor;
 class TimelineView;
 class TrackStripView;
+
+// The shared north-south resize cursor for row-height drags.
+const BCursor *RowResizeCursor();
 
 // The area below the ruler: a vertical stack of per-track rows. Each row is a
 // TrackStripView (left, in the 235 px strip column) plus a timeline lane drawn
@@ -70,6 +74,27 @@ public:
     // to clear the indicator. Called by a TrackStripView mid-drag.
     void SetDropGap(int gap);
 
+    // Row geometry. Each track has its own height (JackDawTrack::ui_height,
+    // 0 = default). RowTop is in content coordinates (before the vertical
+    // scroll); RowTop(track count) is the total height.
+    float RowHeight(int row) const;
+    float RowTop(int row) const;
+    // Insertion boundary in [0, track count] nearest a view y (reorder drag).
+    int DropGapAtY(float y) const;
+
+    // Track height drag on a row's bottom edge, from the lane or from a strip
+    // (y in this view's coordinates). `all` resizes every track by the same
+    // amount. RowEdgeAtY: the row whose bottom edge is under y, or -1.
+    int RowEdgeAtY(float y) const;
+    void BeginRowResize(int row, float y, bool all);
+    void RowResizeTo(float y);
+    void EndRowResize();
+    void ShowResizeCursor(bool on);
+    bool IsResizingRow() const
+    {
+        return m_resize_row >= 0;
+    }
+
     // Waveform vertical zoom (1 = full scale reaches the lane edge), shared by
     // every lane. WaveZoomBy steps it up (+) or down (-).
     void SetWaveZoom(float z);
@@ -125,6 +150,13 @@ private:
     WaveSampleCache m_wave_cache[4];
     unsigned long long m_wave_stamp = 0;
     float m_wave_vzoom = 1.0f;
+
+    // Row-height drag state (see BeginRowResize).
+    int m_resize_row = -1;
+    bool m_resize_all = false;
+    float m_resize_y0 = 0.0f;
+    std::vector<int> m_resize_h0; // every row's height at the press
+    bool m_resize_cursor = false; // showing the resize cursor
 
     TimelineView *m_timeline; // borrowed (parent)
     BMessenger m_main;        // MainWindow (for strip context/structural msgs)

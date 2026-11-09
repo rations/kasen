@@ -33,6 +33,11 @@ typedef enum { JACKDAW_TRACK_AUDIO = 0, JACKDAW_TRACK_INSTRUMENT } JackDawTrackK
  * still records to disk; only the live overlay stops growing. */
 #define JACKDAW_REC_PEAK_MAX_BLOCKS (1 << 20)
 
+/* Timeline lane height range in pixels. The minimum is what the track strip's
+ * controls need; it is also the default. */
+#define JACKDAW_TRACK_HEIGHT_MIN 100
+#define JACKDAW_TRACK_HEIGHT_MAX 400
+
 /* MIDI capture ringbuffer size — event-based, not sample-rate-dependent. */
 #define TRACK_MIDI_RINGBUF_BYTES 65536
 
@@ -147,6 +152,11 @@ struct _JackDawTrack {
     /* Feeder's playback position in timeline frames (feeder-owned; the RT
      * callback does not read it). */
     volatile off_t played_frames;
+
+    /* Lane height in pixels on the timeline (UI state, saved with the
+     * project). Main thread only; 0 = the default height. Kept within
+     * JACKDAW_TRACK_HEIGHT_MIN..MAX. */
+    gint ui_height;
 
     /* FX: main-thread list of PluginInstance* (effects on this track). */
     GPtrArray *fx_list;

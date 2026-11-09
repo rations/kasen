@@ -2,7 +2,9 @@
 
 #include "StateButton.h"
 
+#include <AppDefs.h>
 #include <Button.h>
+#include <Cursor.h>
 #include <LayoutBuilder.h>
 #include <Message.h>
 #include <TextControl.h>
@@ -17,7 +19,6 @@
 #include "KnobView.h"
 #include "Messages.h"
 #include "PortSelector.h"
-#include "TimelineView.h"  // kTimelineTrackHeight (row geometry for the reorder drag)
 #include "TrackAreaView.h" // parent view: drop-indicator feedback
 #include "VuView.h"
 
@@ -274,6 +275,19 @@ void TrackStripView::MouseDown(BPoint where)
     }
     jackdaw_project_select_single(m_project, m_track);
 
+    // A press on the strip's bottom edge drags the row height (Ctrl/Cmd:
+    // every row); the track area owns the resize.
+    if (TrackAreaView *area = dynamic_cast<TrackAreaView *>(Parent())) {
+        BPoint ap = ConvertToParent(where);
+        int edge = area->RowEdgeAtY(ap.y);
+        if (edge >= 0) {
+            area->BeginRowResize(edge, ap.y, (modifiers & (B_COMMAND_KEY | B_CONTROL_KEY)) != 0);
+            m_resizing = true;
+            SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+            return;
+        }
+    }
+
     // Prime a drag-to-reorder: a plain press on the strip background (child
     // controls consume their own clicks) can become a row drag once the pointer
     // moves past a small threshold.
@@ -284,27 +298,36 @@ void TrackStripView::MouseDown(BPoint where)
     SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
 }
 
-// Insertion boundary in [0, track count] for the current pointer position. The
-// vertical scroll offset cancels out because the strip sits at (from*rowH -
-// scroll), so only the press-time index and the local y are needed.
+// Insertion boundary in [0, track count] for the current pointer position:
+// the row boundary nearest it, from the track area's row geometry (rows can
+// differ in height).
 int TrackStripView::DropGapFor(float local_y) const
 {
-    int n = (int)jackdaw_project_track_count(m_project);
-    float rowH = kTimelineTrackHeight;
-    int gap = (int)floorf(((float)m_drag_from * rowH + local_y) / rowH + 0.5f);
-    if (gap < 0)
-        gap = 0;
-    if (gap > n)
-        gap = n;
-    return gap;
+    TrackAreaView *area = dynamic_cast<TrackAreaView *>(Parent());
+    if (!area)
+        return m_drag_from < 0 ? 0 : m_drag_from;
+    return area->DropGapAtY(Frame().top + local_y);
 }
 
 void TrackStripView::MouseMoved(BPoint where, uint32 code, const BMessage *drag)
 {
-    (void)code;
     (void)drag;
-    if (!m_maybe_drag)
+    TrackAreaView *parent_area = dynamic_cast<TrackAreaView *>(Parent());
+    if (m_resizing) {
+        if (parent_area)
+            parent_area->RowResizeTo(ConvertToParent(where).y);
         return;
+    }
+    if (!m_maybe_drag) {
+        // Resize cursor over the strip's bottom edge.
+        bool edge = code != B_EXITED_VIEW && parent_area &&
+                    parent_area->RowEdgeAtY(ConvertToParent(where).y) >= 0;
+        if (edge != m_resize_cursor) {
+            m_resize_cursor = edge;
+            SetViewCursor(edge ? RowResizeCursor() : B_CURSOR_SYSTEM_DEFAULT);
+        }
+        return;
+    }
     if (!m_did_drag && fabsf(where.y - m_drag_start_y) < 6.0f)
         return; // below the movement threshold: still a click, not a drag
     m_did_drag = true;
@@ -314,6 +337,12 @@ void TrackStripView::MouseMoved(BPoint where, uint32 code, const BMessage *drag)
 
 void TrackStripView::MouseUp(BPoint where)
 {
+    if (m_resizing) {
+        m_resizing = false;
+        if (TrackAreaView *area = dynamic_cast<TrackAreaView *>(Parent()))
+            area->EndRowResize();
+        return;
+    }
     if (!m_maybe_drag)
         return;
     bool did = m_did_drag;
