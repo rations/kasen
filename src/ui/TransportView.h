@@ -9,12 +9,13 @@ class BCheckBox;
 class BStringView;
 class ContextButton;
 class StateButton;
+class StateIconView;
 class StepperControl;
 
 // Transport bar (two rows, fixed metrics so it never re-flows on state change):
 //
-//   row 1  |◀ |<< >>| ▶|   ▶ ⟳ || ■ ●    <position>  <state>
-//   row 2  Split  Grid Snap Metro Bars   BPM[-/+]  Sig[-/+]/[-/+]     Mixer
+//   row 1  |◀ |<< >>| ▶| | ▶ ⟳ || ■ ●  <position> <state>   Metro BPM[-/+] Sig[-/+]/[-/+]
+//   row 2  Split | Grid Snap Bars                                                  Mixer
 //
 // Momentary transport buttons post MSG_TRANSPORT_* to the window (the sole
 // engine caller). Tempo/grid/metronome controls apply to the project directly
@@ -49,9 +50,9 @@ private:
     BButton *m_stop_button;
     ContextButton *m_record_button;
     BStringView *m_readout;
-    BStringView *m_state; // ▶ / ● / count-in marker, fixed width
+    StateIconView *m_state; // play / record / count-in icon, fixed width
 
-    BButton *m_split_button;
+    StateButton *m_split_button;
     BCheckBox *m_grid;
     BCheckBox *m_snap;
     BCheckBox *m_bars_mode;

@@ -332,6 +332,29 @@ def icon_loop():
     return i
 
 
+def icon_split():
+    """Split: two clips with a red cut line between them."""
+    i = Icon()
+    left = i.polygon([(3, 12), (26, 12), (26, 52), (3, 52)])
+    right = i.polygon([(38, 12), (61, 12), (61, 52), (38, 52)])
+    solid_glyph(i, [left, right], "green", (3, 12, 61, 52))
+    cut = i.open_path([((32, 4), (32, 4), (32, 4)), ((32, 60), (32, 60), (32, 60))])
+    stroked_glyph(i, [cut], "red", (28, 4, 36, 60), 6)
+    return i
+
+
+def icon_metronome():
+    """Metronome: a wooden pyramid with a steel pendulum and its weight."""
+    i = Icon()
+    body = i.polygon([(7, 60), (57, 60), (42, 4), (22, 4)])
+    solid_glyph(i, [body], "amber", (7, 4, 57, 60))
+    arm = i.open_path([((32, 52), (32, 52), (32, 52)), ((50, 8), (50, 8), (50, 8))])
+    stroked_glyph(i, [arm], "steel", (30, 6, 52, 54), 5)
+    weight = i.polygon([(36, 22), (49, 27), (45, 37), (32, 32)])
+    solid_glyph(i, [weight], "steel", (32, 22, 49, 37))
+    return i
+
+
 ICONS = {
     "play": icon_play,
     "pause": icon_pause,
@@ -345,6 +368,8 @@ ICONS = {
     "loop": icon_loop,
     "mono": icon_mono,
     "stereo": icon_stereo,
+    "split": icon_split,
+    "metronome": icon_metronome,
 }
 
 
