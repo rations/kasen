@@ -1,0 +1,6 @@
+// Kasen's application resources: signature (must match the BApplication
+// constructor) and the icon Tracker and Deskbar show. The version resource
+// is written by setversion at link time, from VERSION.
+resource app_signature "application/x-vnd.kasen";
+
+#include "icons/kasen_icon.rdef"

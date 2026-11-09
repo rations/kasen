@@ -80,10 +80,18 @@ $(JACK_BACKEND): src/backend/jack/jack_backend.c src/engine/audio_backend.h
 	$(CC) -std=gnu99 -Wall -Wextra -fPIC -shared -I$(NONPACKAGED)/include -Isrc $< -o $@ \
 		-L$(NONPACKAGED)/lib -ljack
 
-$(TARGET): $(OBJECTS) VERSION
+# Application resources (signature, icon): the .rdef goes through the C
+# preprocessor for its #include, then rc, as Haiku's makefile-engine does.
+RSRC = src/ui/Kasen.rsrc
+$(RSRC): src/ui/Kasen.rdef src/ui/icons/kasen_icon.rdef
+	$(CC) -E -P -Isrc/ui -x c - < $< | grep -av '^#' | rc -o $@ -
+
+$(TARGET): $(OBJECTS) $(RSRC) VERSION
 	$(CXX) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+	xres -o $(TARGET) $(RSRC)
 	setversion $(TARGET) -app $(word 1,$(VERSION_PARTS)) $(word 2,$(VERSION_PARTS)) \
 		$(word 3,$(VERSION_PARTS)) -short $(VERSION) -long "Kasen $(VERSION)"
+	mimeset -f $(TARGET)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -122,6 +130,6 @@ src/host/sdk_memorystream.o: $(VST3_SDK)/public.sdk/source/common/memorystream.c
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJECTS) $(DEPS) $(TARGET) $(JACK_BACKEND)
+	rm -f $(OBJECTS) $(DEPS) $(TARGET) $(JACK_BACKEND) $(RSRC)
 
 .PHONY: all clean
