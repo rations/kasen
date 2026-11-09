@@ -54,6 +54,31 @@ AudioClip *audio_clip_new(const gchar *path, GError **err)
 
     g_free(buf);
     sf_close(sf);
+
+    /* Coarser levels, each folded from the one below. */
+    const gfloat *src = clip->block_peaks;
+    guint32 src_n = clip->n_blocks;
+    for (int lv = 0; lv < AUDIO_CLIP_PEAK_LEVELS && src_n > AUDIO_CLIP_PEAK_FANOUT; lv++) {
+        guint32 dst_n = (src_n + AUDIO_CLIP_PEAK_FANOUT - 1) / AUDIO_CLIP_PEAK_FANOUT;
+        gfloat *dst = g_new(gfloat, (gsize)dst_n * ch * 2);
+        for (guint32 d = 0; d < dst_n; d++) {
+            guint32 s0 = d * AUDIO_CLIP_PEAK_FANOUT;
+            guint32 s1 = MIN(s0 + AUDIO_CLIP_PEAK_FANOUT, src_n);
+            for (int c = 0; c < ch; c++) {
+                gfloat mn = 1.0f, mx = -1.0f;
+                for (guint32 b = s0; b < s1; b++) {
+                    mn = MIN(mn, src[(b * ch + c) * 2]);
+                    mx = MAX(mx, src[(b * ch + c) * 2 + 1]);
+                }
+                dst[(d * ch + c) * 2] = mn;
+                dst[(d * ch + c) * 2 + 1] = mx;
+            }
+        }
+        clip->mip_peaks[lv] = dst;
+        clip->mip_blocks[lv] = dst_n;
+        src = dst;
+        src_n = dst_n;
+    }
     return clip;
 }
 
@@ -72,24 +97,26 @@ void audio_clip_free(AudioClip *clip)
     if (!g_atomic_int_dec_and_test(&clip->refcount))
         return; /* still referenced elsewhere */
     g_free(clip->block_peaks);
+    for (int lv = 0; lv < AUDIO_CLIP_PEAK_LEVELS; lv++)
+        g_free(clip->mip_peaks[lv]);
     g_free(clip->path);
     g_free(clip);
 }
 
-void audio_clip_get_peaks(AudioClip *clip, sf_count_t start, sf_count_t end, gint xres,
-                          gfloat *out_min, gfloat *out_max)
+void audio_peak_table_query(const gfloat *table, guint32 n_blocks, int ch, int block,
+                            sf_count_t start, sf_count_t end, gint xres, gfloat *out_min,
+                            gfloat *out_max)
 {
-    if (!clip || xres <= 0 || end <= start || !clip->block_peaks) {
-        for (gint i = 0; i < xres * (clip ? clip->info.channels : 1); i++) {
-            if (out_min)
-                out_min[i] = 0.0f;
-            if (out_max)
-                out_max[i] = -1.0f;
+    if (xres <= 0 || ch <= 0)
+        return;
+    if (!table || n_blocks == 0 || block <= 0 || end <= start) {
+        for (gint i = 0; i < xres * ch; i++) {
+            out_min[i] = 0.0f;
+            out_max[i] = -1.0f;
         }
         return;
     }
 
-    int ch = clip->info.channels;
     gdouble spp = (gdouble)(end - start) / (gdouble)xres;
 
     for (gint x = 0; x < xres; x++) {
@@ -100,16 +127,16 @@ void audio_clip_get_peaks(AudioClip *clip, sf_count_t start, sf_count_t end, gin
         if (s1 > end)
             s1 = end;
 
-        guint32 b0 = (guint32)(s0 / AUDIO_CLIP_PEAK_BLOCK);
-        guint32 b1 = (guint32)((s1 - 1) / AUDIO_CLIP_PEAK_BLOCK) + 1;
-        if (b1 > clip->n_blocks)
-            b1 = clip->n_blocks;
+        guint32 b0 = s0 < 0 ? 0 : (guint32)(s0 / block);
+        guint32 b1 = s1 <= 0 ? 0 : (guint32)((s1 - 1) / block) + 1;
+        if (b1 > n_blocks)
+            b1 = n_blocks;
 
         for (int c = 0; c < ch; c++) {
             gfloat mn = 1.0f, mx = -1.0f;
             for (guint32 b = b0; b < b1; b++) {
-                gfloat bmin = clip->block_peaks[(b * ch + c) * 2];
-                gfloat bmax = clip->block_peaks[(b * ch + c) * 2 + 1];
+                gfloat bmin = table[((gsize)b * ch + c) * 2];
+                gfloat bmax = table[((gsize)b * ch + c) * 2 + 1];
                 if (bmin < mn)
                     mn = bmin;
                 if (bmax > mx)
@@ -119,6 +146,38 @@ void audio_clip_get_peaks(AudioClip *clip, sf_count_t start, sf_count_t end, gin
             out_max[x * ch + c] = mx;
         }
     }
+}
+
+void audio_clip_get_peaks(AudioClip *clip, sf_count_t start, sf_count_t end, gint xres,
+                          gfloat *out_min, gfloat *out_max)
+{
+    if (!clip) {
+        for (gint i = 0; i < xres; i++) {
+            if (out_min)
+                out_min[i] = 0.0f;
+            if (out_max)
+                out_max[i] = -1.0f;
+        }
+        return;
+    }
+    if (!out_min || !out_max)
+        return;
+
+    /* The coarsest level whose entries still fit inside one pixel. */
+    const gfloat *table = clip->block_peaks;
+    guint32 n = clip->n_blocks;
+    int block = AUDIO_CLIP_PEAK_BLOCK;
+    gdouble spp = xres > 0 ? (gdouble)(end - start) / (gdouble)xres : 0.0;
+    for (int lv = 0; lv < AUDIO_CLIP_PEAK_LEVELS; lv++) {
+        int lv_block = block * AUDIO_CLIP_PEAK_FANOUT;
+        if (!clip->mip_peaks[lv] || spp < (gdouble)lv_block)
+            break;
+        table = clip->mip_peaks[lv];
+        n = clip->mip_blocks[lv];
+        block = lv_block;
+    }
+    audio_peak_table_query(table, n, clip->info.channels, block, start, end, xres, out_min,
+                           out_max);
 }
 
 sf_count_t audio_clip_read_frames(AudioClip *clip, sf_count_t start_frame, sf_count_t n_frames,

@@ -31,6 +31,10 @@ enum {
     // Timeline zoom (menu / keyboard).
     MSG_ZOOM_IN = 'zmin',
     MSG_ZOOM_OUT = 'zmot',
+    // Waveform height (vertical zoom of every lane's waveform).
+    MSG_WAVE_TALLER = 'wvup',
+    MSG_WAVE_SHORTER = 'wvdn',
+    MSG_WAVE_RESET = 'wvrs',
 
     // Region editing.
     MSG_SPLIT = 'splt',           // split focused track at the cursor

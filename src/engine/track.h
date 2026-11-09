@@ -28,6 +28,11 @@ typedef enum { JACKDAW_TRACK_AUDIO = 0, JACKDAW_TRACK_INSTRUMENT } JackDawTrackK
 /* Max tracks the engine supports */
 #define JACKDAW_MAX_TRACKS 64
 
+/* Live record waveform capacity, in AUDIO_CLIP_PEAK_BLOCK-frame blocks: 2^20
+ * blocks is ~93 min at 48 kHz (16 MiB per armed track). Past it the take
+ * still records to disk; only the live overlay stops growing. */
+#define JACKDAW_REC_PEAK_MAX_BLOCKS (1 << 20)
+
 /* MIDI capture ringbuffer size — event-based, not sample-rate-dependent. */
 #define TRACK_MIDI_RINGBUF_BYTES 65536
 
@@ -111,14 +116,33 @@ struct _JackDawTrack {
      * played to the frame it was captured at), sampled when it is armed. */
     off_t midi_rec_latency;
 
-    /* Live record waveform: one (min,max) float pair per JACK period, written
-     * by the RT callback while recording and read by the UI overlay. Allocated
-     * on record-arm, freed when the take is finalised. rec_peak_count only ever
-     * grows during a take (racy UI reads are safe); rec_peak_block is the
-     * frames-per-bucket (the JACK buffer size). */
-    volatile gfloat *rec_peak_buf;
-    volatile gint rec_peak_count;
-    gint rec_peak_block;
+    /* Live record waveform, in the same layout as an AudioClip peak table so
+     * one renderer draws the take while it records and the clip after it:
+     * one (min,max) pair per channel per AUDIO_CLIP_PEAK_BLOCK frames, always
+     * two channels wide (a mono take fills channel 0 only):
+     *   rec_peak_buf[(b * 2 + c) * 2 + 0] = min, [... + 1] = max.
+     * Blocks are fixed-size whatever the period, so a period change mid-take
+     * does not move them. Allocated on the main thread when a take opens
+     * (JACKDAW_REC_PEAK_MAX_BLOCKS blocks), reused across takes, freed with the
+     * track.
+     * - rec_peak_count (g_atomic): completed blocks. The RT path writes a block
+     *   then publishes the new count; the UI reads the count and only the
+     *   blocks below it. The main thread zeroes it before a take starts and
+     *   after it is finalised (RT is not capturing then).
+     * - rec_peak_origin: timeline frame of block 0's first frame, before the
+     *   capture-latency shift (the block the capture started in). Written by
+     *   RT before it publishes the first block.
+     * - rec_peak_channels: 1 or 2, set with the buffer when the take opens.
+     * - rec_acc_*, rec_peak_started: RT-only partial-block state, reset on the
+     *   main thread before the take starts. */
+    gfloat *rec_peak_buf;
+    gint rec_peak_count;
+    gint rec_peak_channels;
+    volatile off_t rec_peak_origin;
+    gfloat rec_acc_min[2];
+    gfloat rec_acc_max[2];
+    gint rec_acc_n;
+    gboolean rec_peak_started;
 
     /* Feeder's playback position in timeline frames (feeder-owned; the RT
      * callback does not read it). */

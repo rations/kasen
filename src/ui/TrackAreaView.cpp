@@ -15,6 +15,7 @@
 #include "RegionGainWindow.h"
 #include "TimelineView.h"
 #include "TrackStripView.h"
+#include "WaveDraw.h"
 
 // Empty-timeline palette (dark canvas like the Linux JackDAW wave area).
 static const rgb_color kAreaBg = {45, 45, 48, 255};
@@ -24,16 +25,12 @@ static const rgb_color kBeatLine = {62, 62, 66, 255};
 static const rgb_color kPlayhead = {230, 70, 60, 255};
 static const rgb_color kRowSep = {30, 30, 32, 255};
 static const rgb_color kRowSelTint = {58, 66, 82, 255};
-// Waveform palette (mirrors the Linux JackDAW wave view greens + amber edges).
-static const rgb_color kWaveColor = {38, 128, 51, 255};
-static const rgb_color kWaveMid = {77, 179, 90, 255};
+// Region boundary edges (amber, as the Linux JackDAW wave view). The
+// waveform colours themselves live in WaveDraw.cpp.
 static const rgb_color kRegionEdge = {230, 220, 120, 255};
 // Selected-section fill tint + rubber-band range wash (over the lane bg).
 static const rgb_color kSelRegionTint = {70, 90, 130, 90};
 static const rgb_color kRangeTint = {90, 110, 150, 70};
-// Live-record waveform overlay (drawn while a take is being captured).
-static const rgb_color kRecWave = {214, 74, 64, 255};
-static const rgb_color kRecMid = {150, 46, 40, 255};
 // Instrument-track MIDI note rectangles (blue) + live red record overlay.
 static const rgb_color kMidiNote = {96, 156, 230, 255};
 static const rgb_color kMidiRecNote = {230, 96, 88, 255};
@@ -824,10 +821,112 @@ void TrackAreaView::SetSelectionGain(float db)
     CommitTrack(t);
 }
 
-/* Draw every track's clip-region waveforms into the lane (right of the strip
- * column). Peaks come from the AudioClip block-peak table via
- * audio_clip_get_peaks(), sampled per pixel column — the same model the Linux
- * wave view uses (3x vertical exaggeration so quiet audio stays visible). */
+// The waveform zoom factor's range and wheel step.
+static const float kWaveZoomMin = 1.0f;
+static const float kWaveZoomMax = 16.0f;
+static const float kWaveZoomStep = 1.25f;
+
+// Sample cache: how far past the visible span to read on a miss (in visible
+// spans each side), and the most frames one entry may hold.
+static const long long kWaveCacheMaxFrames = 4 * 1024 * 1024;
+
+TrackAreaView::WaveSampleCache::~WaveSampleCache()
+{
+    Reset();
+}
+
+void TrackAreaView::WaveSampleCache::Reset()
+{
+    if (clip)
+        audio_clip_free(clip);
+    clip = NULL;
+    first = 0;
+    count = 0;
+    channels = 0;
+    data.clear();
+}
+
+void TrackAreaView::SetWaveZoom(float z)
+{
+    if (z < kWaveZoomMin)
+        z = kWaveZoomMin;
+    if (z > kWaveZoomMax)
+        z = kWaveZoomMax;
+    if (z == m_wave_vzoom)
+        return;
+    m_wave_vzoom = z;
+    Invalidate();
+}
+
+void TrackAreaView::WaveZoomBy(int steps)
+{
+    float z = m_wave_vzoom;
+    for (int k = 0; k < steps; k++)
+        z *= kWaveZoomStep;
+    for (int k = 0; k > steps; k--)
+        z /= kWaveZoomStep;
+    // Land exactly on 1 when stepping back down to it.
+    if (fabsf(z - 1.0f) < 0.05f)
+        z = 1.0f;
+    SetWaveZoom(z);
+}
+
+/* Raw samples of `clip` covering [need0, need1) file frames, or NULL if the
+ * file cannot be read. Kept in a small LRU of windows wider than the request
+ * so scrolling a zoomed-in view does not re-read the file every frame. Each
+ * entry holds a clip reference, so a clip deleted mid-cache stays valid. */
+const TrackAreaView::WaveSampleCache *TrackAreaView::WaveSamples(AudioClip *clip, long long need0,
+                                                                 long long need1)
+{
+    if (!clip || need1 <= need0)
+        return NULL;
+    WaveSampleCache *slot = NULL;
+    for (WaveSampleCache &c : m_wave_cache) {
+        if (c.clip == clip && c.first <= need0 && c.first + c.count >= need1) {
+            c.stamp = ++m_wave_stamp;
+            return &c;
+        }
+        if (!slot || c.stamp < slot->stamp)
+            slot = &c;
+    }
+
+    long long frames = (long long)clip->info.frames;
+    long long span = need1 - need0;
+    long long w0 = need0 - span;
+    long long w1 = need1 + span;
+    if (w1 - w0 > kWaveCacheMaxFrames) {
+        w0 = need0;
+        w1 = need1;
+    }
+    if (w0 < 0)
+        w0 = 0;
+    if (w1 > frames)
+        w1 = frames;
+    if (w1 <= w0)
+        return NULL;
+
+    slot->Reset();
+    int ch = clip->info.channels;
+    slot->data.resize((size_t)(w1 - w0) * (size_t)ch);
+    sf_count_t got = audio_clip_read_frames(clip, w0, w1 - w0, slot->data.data());
+    if (got <= 0) {
+        slot->data.clear();
+        return NULL;
+    }
+    slot->clip = audio_clip_ref(clip);
+    slot->first = w0;
+    slot->count = (long long)got;
+    slot->channels = ch;
+    slot->stamp = ++m_wave_stamp;
+    return slot;
+}
+
+/* Draw every track's audio regions: a body rectangle per region and its
+ * waveform at true scale (full scale = channel lane edge, times the view's
+ * waveform zoom), stereo as two lanes. Three detail levels by file frames per
+ * pixel: peak table (>= one table block per pixel), exact min/max from the
+ * samples (down to one sample per pixel), then the samples themselves joined
+ * by a line, with a handle on each once they are far apart. */
 void TrackAreaView::DrawWaveforms(BRect lane)
 {
     JackDawProject *p = m_timeline->Project();
@@ -839,7 +938,8 @@ void TrackAreaView::DrawWaveforms(BRect lane)
     int jack_sr = (int)jackdaw_engine_get_sample_rate();
     int laneW = (int)lane.Width();
     off_t view0 = start;
-    off_t view1 = start + (off_t)((double)laneW * spp) + 1;
+    off_t view1 = start + (off_t)ceil((double)laneW * spp) + 1;
+    std::vector<float> pk_min, pk_max;
 
     for (guint i = 0; i < n; i++) {
         float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
@@ -866,100 +966,151 @@ void TrackAreaView::DrawWaveforms(BRect lane)
             if (vis1 <= vis0)
                 continue;
 
+            float rx0 = lane.left + m_timeline->FrameToX(r_tl0);
+            float rx1 = lane.left + m_timeline->FrameToX(r_tl1);
+            float cx0 = rx0 < lane.left ? lane.left : rx0;
+            float cx1 = rx1 > lane.right ? lane.right : rx1;
+            if (cx1 < cx0)
+                continue;
+
+            WaveDrawBody(this, BRect(cx0, row_top + 1.0f, cx1, row_bot - 1.0f), kClipWavePalette);
+
             // Selected-section highlight: a translucent wash over the region span.
             if (m_sel_track == t && SectionSelContains(r)) {
-                float rx0 = lane.left + m_timeline->FrameToX(r_tl0);
-                float rx1 = lane.left + m_timeline->FrameToX(r_tl1);
-                if (rx0 < lane.left)
-                    rx0 = lane.left;
-                if (rx1 > lane.right)
-                    rx1 = lane.right;
-                if (rx1 > rx0) {
-                    SetDrawingMode(B_OP_ALPHA);
-                    SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
-                    SetHighColor(kSelRegionTint);
-                    FillRect(BRect(rx0, row_top, rx1, row_bot));
-                    SetDrawingMode(B_OP_COPY);
-                }
+                SetDrawingMode(B_OP_ALPHA);
+                SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+                SetHighColor(kSelRegionTint);
+                FillRect(BRect(cx0, row_top, cx1, row_bot));
+                SetDrawingMode(B_OP_COPY);
             }
 
-            int px0 = (int)(((double)vis0 - start) / spp);
-            int px1 = (int)(((double)vis1 - start) / spp) + 1;
+            int px0 = (int)floor(((double)vis0 - (double)start) / spp);
+            int px1 = (int)ceil(((double)vis1 - (double)start) / spp);
             if (px0 < 0)
                 px0 = 0;
             if (px1 > laneW)
                 px1 = laneW;
             int npx = px1 - px0;
-            if (npx <= 0)
-                continue;
 
             int clip_sr = r->clip->info.samplerate;
             double ratio = (clip_sr > 0 && jack_sr > 0) ? (double)clip_sr / (double)jack_sr : 1.0;
-            sf_count_t cf0 = r->file_in + (sf_count_t)((vis0 - r_tl0) * ratio);
-            sf_count_t cf1 = r->file_in + (sf_count_t)((vis1 - r_tl0) * ratio);
-            if (cf1 <= cf0)
-                cf1 = cf0 + 1;
-            if (cf1 > r->clip->info.frames)
-                cf1 = r->clip->info.frames;
-            if (cf0 < 0)
-                cf0 = 0;
-            if (cf1 <= cf0)
+            double fpp = spp * ratio; // file frames per pixel
+            // The region's span of the file, which bounds everything drawn.
+            long long rc0 = (long long)r->file_in;
+            long long rc1 = rc0 + (long long)ceil((double)r->length * ratio);
+            if (rc1 > (long long)r->clip->info.frames)
+                rc1 = (long long)r->clip->info.frames;
+            if (rc1 <= rc0 || npx <= 0)
                 continue;
 
             int ch = r->clip->info.channels;
             int draw_ch = ch > 2 ? 2 : ch;
-            float gain = r->gain;
+            float sub_h = band_h / (float)draw_ch;
 
-            gfloat *out_min = g_new(gfloat, (gsize)npx * ch);
-            gfloat *out_max = g_new(gfloat, (gsize)npx * ch);
-            audio_clip_get_peaks(r->clip, cf0, cf1, npx, out_min, out_max);
-
-            for (int c = 0; c < draw_ch; c++) {
-                float sub_h = band_h / (float)draw_ch;
-                float sub_y0 = band_y0 + (float)c * sub_h;
-                float mid_y = sub_y0 + sub_h / 2.0f;
-                float half = (sub_h / 2.0f) * 3.0f; /* vertical exaggeration */
-
-                BeginLineArray(npx);
-                for (int x = 0; x < npx; x++) {
-                    float mn = out_min[x * ch + c] * gain;
-                    float mx = out_max[x * ch + c] * gain;
-                    if (mn > mx)
-                        continue;
-                    float y_top = mid_y - mx * half;
-                    float y_bot = mid_y - mn * half;
-                    if (y_top < sub_y0)
-                        y_top = sub_y0;
-                    if (y_bot > sub_y0 + sub_h)
-                        y_bot = sub_y0 + sub_h;
-                    float sx = lane.left + (float)(px0 + x) + 0.5f;
-                    AddLine(BPoint(sx, y_top), BPoint(sx, y_bot), kWaveColor);
+            if (fpp <= 1.0) {
+                // Sample mode: the file frames under the visible span, one past
+                // each end so the line runs to the edge.
+                double f_at0 = (double)rc0 + ((double)vis0 - (double)r_tl0) * ratio;
+                double f_at1 = (double)rc0 + ((double)vis1 - (double)r_tl0) * ratio;
+                long long f0 = (long long)floor(f_at0) - 1;
+                long long f1 = (long long)ceil(f_at1) + 1;
+                if (f0 < rc0)
+                    f0 = rc0;
+                if (f1 > rc1)
+                    f1 = rc1;
+                const WaveSampleCache *c = WaveSamples(r->clip, f0, f1);
+                if (!c)
+                    continue;
+                if (f0 < c->first)
+                    f0 = c->first;
+                if (f1 > c->first + c->count)
+                    f1 = c->first + c->count;
+                if (f1 <= f0)
+                    continue;
+                double x_first =
+                    lane.left + ((double)r_tl0 + (double)(f0 - rc0) / ratio - (double)start) / spp;
+                double ppf = 1.0 / fpp;
+                for (int cc = 0; cc < draw_ch; cc++) {
+                    WaveLane wl = {band_y0 + (float)cc * sub_h, sub_h, m_wave_vzoom, r->gain};
+                    WaveDrawMidLine(this, wl, cx0, cx1, kClipWavePalette);
+                    const float *fr = c->data.data() + (size_t)(f0 - c->first) * (size_t)ch + cc;
+                    WaveDrawSamples(this, wl, fr, ch, (int)(f1 - f0), x_first, ppf, cx0, cx1,
+                                    kClipWavePalette);
                 }
-                EndLineArray();
-
-                SetHighColor(kWaveMid);
-                StrokeLine(BPoint(lane.left + (float)px0, mid_y),
-                           BPoint(lane.left + (float)px1, mid_y));
+            } else {
+                pk_min.resize((size_t)npx * (size_t)ch);
+                pk_max.resize((size_t)npx * (size_t)ch);
+                // File frame at the left edge of pixel px0.
+                double fstart =
+                    (double)rc0 + ((double)start + (double)px0 * spp - (double)r_tl0) * ratio;
+                if (fpp < (double)AUDIO_CLIP_PEAK_BLOCK) {
+                    long long need0 = (long long)floor(fstart);
+                    long long need1 = (long long)ceil(fstart + (double)npx * fpp);
+                    if (need0 < rc0)
+                        need0 = rc0;
+                    if (need1 > rc1)
+                        need1 = rc1;
+                    const WaveSampleCache *c = WaveSamples(r->clip, need0, need1);
+                    if (!c)
+                        continue;
+                    // Only the region's own frames: clamp the cache window to it.
+                    long long w0 = c->first > rc0 ? c->first : rc0;
+                    long long w1 = c->first + c->count < rc1 ? c->first + c->count : rc1;
+                    if (w1 <= w0)
+                        continue;
+                    WavePeaksFromSamples(c->data.data() + (size_t)(w0 - c->first) * (size_t)ch, ch,
+                                         w0, w1 - w0, fstart, fpp, npx, pk_min.data(),
+                                         pk_max.data());
+                } else {
+                    sf_count_t cf0 = (sf_count_t)fstart;
+                    sf_count_t cf1 = (sf_count_t)(fstart + (double)npx * fpp);
+                    if (cf0 < rc0)
+                        cf0 = rc0;
+                    if (cf1 > rc1)
+                        cf1 = rc1;
+                    if (cf1 <= cf0)
+                        continue;
+                    // Map the clamped range back onto the pixels it covers.
+                    int q0 = (int)floor(((double)cf0 - fstart) / fpp);
+                    int q1 = (int)ceil(((double)cf1 - fstart) / fpp);
+                    if (q0 < 0)
+                        q0 = 0;
+                    if (q1 > npx)
+                        q1 = npx;
+                    for (size_t k = 0; k < pk_min.size(); k++) {
+                        pk_min[k] = 0.0f;
+                        pk_max[k] = -1.0f;
+                    }
+                    if (q1 > q0)
+                        audio_clip_get_peaks(r->clip, cf0, cf1, q1 - q0,
+                                             pk_min.data() + (size_t)q0 * ch,
+                                             pk_max.data() + (size_t)q0 * ch);
+                }
+                for (int cc = 0; cc < draw_ch; cc++) {
+                    WaveLane wl = {band_y0 + (float)cc * sub_h, sub_h, m_wave_vzoom, r->gain};
+                    WaveDrawMidLine(this, wl, cx0, cx1, kClipWavePalette);
+                    WaveDrawPeaks(this, wl, lane.left + (float)px0, npx, pk_min.data() + cc,
+                                  pk_max.data() + cc, ch, kClipWavePalette);
+                }
             }
-            g_free(out_min);
-            g_free(out_max);
 
             /* Region boundary edges — both start and end, so a gap left by a
              * deleted neighbour still reads as two real edges. Skip the first
              * region's start at timeline 0. */
             SetHighColor(kRegionEdge);
-            if (r_tl0 > 0) {
-                float bx = lane.left + m_timeline->FrameToX(r_tl0);
-                if (bx >= lane.left && bx <= lane.right)
-                    StrokeLine(BPoint(bx, row_top), BPoint(bx, row_bot));
-            }
-            float ex = lane.left + m_timeline->FrameToX(r_tl1);
-            if (ex >= lane.left && ex <= lane.right)
-                StrokeLine(BPoint(ex, row_top), BPoint(ex, row_bot));
+            if (r_tl0 > 0 && rx0 >= lane.left && rx0 <= lane.right)
+                StrokeLine(BPoint(rx0, row_top), BPoint(rx0, row_bot));
+            if (rx1 >= lane.left && rx1 <= lane.right)
+                StrokeLine(BPoint(rx1, row_top), BPoint(rx1, row_bot));
         }
     }
 }
 
+/* The take each armed track is recording, drawn exactly like a region (same
+ * renderer, lanes and scale) in the record palette, from the live peak table
+ * the RT path fills (fixed AUDIO_CLIP_PEAK_BLOCK blocks, see track.h). It sits
+ * where the finished clip will land: the capture origin less the capture
+ * latency, as jackdaw_engine_finalize_takes places it. */
 void TrackAreaView::DrawRecordOverlay(BRect lane)
 {
     if (!jackdaw_engine_is_recording())
@@ -970,7 +1121,9 @@ void TrackAreaView::DrawRecordOverlay(BRect lane)
     if (spp <= 0.0)
         return;
     off_t start = m_timeline->ViewStart();
-    off_t view1 = start + (off_t)((double)lane.Width() * spp) + 1;
+    int laneW = (int)lane.Width();
+    off_t view1 = start + (off_t)ceil((double)laneW * spp) + 1;
+    std::vector<float> pk_min, pk_max;
 
     for (guint i = 0; i < n; i++) {
         float row_top = (float)i * kTimelineTrackHeight - m_scroll_y;
@@ -981,54 +1134,55 @@ void TrackAreaView::DrawRecordOverlay(BRect lane)
         if (!t || !jackdaw_track_is_armed(t))
             continue;
 
-        // Snapshot the racy RT-written fields once (count only ever grows).
-        gint count = t->rec_peak_count;
-        gint block = t->rec_peak_block;
-        const gfloat *peaks = (const gfloat *)t->rec_peak_buf;
-        if (!peaks || count <= 0 || block <= 0)
+        // Count first: the blocks below it and the origin are published.
+        gint count = g_atomic_int_get(&t->rec_peak_count);
+        const gfloat *peaks = t->rec_peak_buf;
+        if (!peaks || count <= 0)
             continue;
-        off_t rec0 = t->rec_start_frame;
+        off_t tl0 = t->rec_peak_origin - t->rec_latency;
+        off_t tl1 = tl0 + (off_t)count * AUDIO_CLIP_PEAK_BLOCK;
+        off_t vis0 = tl0 > start ? tl0 : start;
+        off_t vis1 = tl1 < view1 ? tl1 : view1;
+        if (vis1 <= vis0)
+            continue;
 
-        // Only walk the buckets that fall inside the visible span.
-        gint kfirst = (start > rec0) ? (gint)((start - rec0) / block) : 0;
-        gint klast = (gint)((view1 - rec0) / block) + 1;
-        if (kfirst < 0)
-            kfirst = 0;
-        if (klast > count)
-            klast = count;
+        float rx0 = lane.left + m_timeline->FrameToX(tl0);
+        float rx1 = lane.left + m_timeline->FrameToX(tl1);
+        float cx0 = rx0 < lane.left ? lane.left : rx0;
+        float cx1 = rx1 > lane.right ? lane.right : rx1;
+        if (cx1 < cx0)
+            continue;
+        WaveDrawBody(this, BRect(cx0, row_top + 1.0f, cx1, row_bot - 1.0f), kRecWavePalette);
 
+        int px0 = (int)floor(((double)vis0 - (double)start) / spp);
+        int px1 = (int)ceil(((double)vis1 - (double)start) / spp);
+        if (px0 < 0)
+            px0 = 0;
+        if (px1 > laneW)
+            px1 = laneW;
+        int npx = px1 - px0;
+        if (npx <= 0)
+            continue;
+
+        // Take frames under the pixels, in the table's own two-channel layout.
+        double f0 = (double)start + (double)px0 * spp - (double)tl0;
+        double f1 = f0 + (double)npx * spp;
+        sf_count_t s0 = (sf_count_t)floor(f0);
+        sf_count_t s1 = (sf_count_t)ceil(f1);
+        pk_min.resize((size_t)npx * 2);
+        pk_max.resize((size_t)npx * 2);
+        audio_peak_table_query(peaks, (guint32)count, 2, AUDIO_CLIP_PEAK_BLOCK, s0, s1, npx,
+                               pk_min.data(), pk_max.data());
+
+        int draw_ch = t->rec_peak_channels == 2 ? 2 : 1;
         float band_y0 = row_top + 3.0f;
         float band_h = kTimelineTrackHeight - 6.0f;
-        float mid_y = band_y0 + band_h / 2.0f;
-        float half = (band_h / 2.0f) * 3.0f;
-
-        SetHighColor(kRecMid);
-        StrokeLine(BPoint(lane.left, mid_y), BPoint(lane.right, mid_y));
-
-        SetHighColor(kRecWave);
-        for (gint k = kfirst; k < klast; k++) {
-            off_t f0 = rec0 + (off_t)k * block;
-            float x0 = lane.left + m_timeline->FrameToX(f0);
-            float x1 = lane.left + m_timeline->FrameToX(f0 + block);
-            if (x1 < lane.left || x0 > lane.right)
-                continue;
-            if (x0 < lane.left)
-                x0 = lane.left;
-            if (x1 > lane.right)
-                x1 = lane.right;
-            if (x1 < x0 + 1.0f)
-                x1 = x0 + 1.0f;
-            float mn = peaks[k * 2];
-            float mx = peaks[k * 2 + 1];
-            float y_top = mid_y - mx * half;
-            float y_bot = mid_y - mn * half;
-            if (y_top < band_y0)
-                y_top = band_y0;
-            if (y_bot > band_y0 + band_h)
-                y_bot = band_y0 + band_h;
-            if (y_bot < y_top + 1.0f)
-                y_bot = y_top + 1.0f;
-            FillRect(BRect(x0, y_top, x1, y_bot));
+        float sub_h = band_h / (float)draw_ch;
+        for (int cc = 0; cc < draw_ch; cc++) {
+            WaveLane wl = {band_y0 + (float)cc * sub_h, sub_h, m_wave_vzoom, 1.0f};
+            WaveDrawMidLine(this, wl, cx0, cx1, kRecWavePalette);
+            WaveDrawPeaks(this, wl, lane.left + (float)px0, npx, pk_min.data() + cc,
+                          pk_max.data() + cc, 2, kRecWavePalette);
         }
     }
 }
@@ -1669,6 +1823,9 @@ void TrackAreaView::MessageReceived(BMessage *message)
             if (mods & (B_COMMAND_KEY | B_CONTROL_KEY)) {
                 // Command/Ctrl + wheel = horizontal zoom.
                 m_timeline->ZoomBy(dy > 0 ? 1.25 : 0.8, where.x - kTimelineHeaderWidth);
+            } else if (mods & B_SHIFT_KEY) {
+                // Shift + wheel = waveform height (wheel up = taller).
+                WaveZoomBy(dy < 0 ? 1 : -1);
             } else {
                 // Plain wheel = vertical track scroll.
                 m_timeline->ScrollTracksBy(dy * kTimelineTrackHeight * 0.5f);

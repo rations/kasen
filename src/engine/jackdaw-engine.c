@@ -733,8 +733,6 @@ static void feeder_stop(void)
  * ----------------------------------------------------------------------- */
 
 #define REC_SCRATCH_FRAMES 4096
-/* Max JACK periods buffered for the live waveform (~46 min at 48k/1024). */
-#define REC_PEAK_MAX_BUCKETS 131072
 
 typedef struct {
     SNDFILE *sf;                    /* open for writing; NULL = idle */
@@ -1214,6 +1212,68 @@ static void *g_slot_midi_buf[JACKDAW_MAX_TRACKS];
  * metering, capture) into engine.slot_L[i]/slot_R[i]. Reads cycle params from
  * the g_rt_* publish slots and input buffers from g_slot_*. Runs on the JACK
  * thread or a worker; never calls the backend's port_buffer. */
+/* RT: fold one period of the dry capture into the track's live-waveform peak
+ * table, in fixed AUDIO_CLIP_PEAK_BLOCK-frame blocks per channel (the AudioClip
+ * layout, see track.h). The partial block carries over to the next period, so
+ * the blocks do not depend on the period length. Each finished block is
+ * written, then published by bumping rec_peak_count (g_atomic, a full
+ * barrier), so the UI never reads a half-written block. No allocation, locks
+ * or syscalls: the table was allocated when the take opened. */
+static void eng_rec_peaks_feed(JackDawTrack *t, const float *live_L, const float *live_R,
+                               jd_nframes_t nframes, off_t blk_start)
+{
+    gfloat *buf = t->rec_peak_buf;
+    if (!buf)
+        return;
+    gint count = g_atomic_int_get(&t->rec_peak_count);
+    if (count >= JACKDAW_REC_PEAK_MAX_BLOCKS)
+        return;
+    if (!t->rec_peak_started) {
+        t->rec_peak_origin = blk_start; /* published with the first block */
+        t->rec_peak_started = TRUE;
+        t->rec_acc_n = 0;
+    }
+    gboolean stereo = t->rec_peak_channels == 2;
+    gint n = t->rec_acc_n;
+    gfloat mnL = t->rec_acc_min[0], mxL = t->rec_acc_max[0];
+    gfloat mnR = t->rec_acc_min[1], mxR = t->rec_acc_max[1];
+    for (jd_nframes_t k = 0; k < nframes; k++) {
+        if (n == 0) {
+            mnL = mnR = 1.0f;
+            mxL = mxR = -1.0f;
+        }
+        gfloat l = live_L[k];
+        if (l < mnL)
+            mnL = l;
+        if (l > mxL)
+            mxL = l;
+        if (stereo) {
+            gfloat r = live_R[k];
+            if (r < mnR)
+                mnR = r;
+            if (r > mxR)
+                mxR = r;
+        }
+        if (++n == AUDIO_CLIP_PEAK_BLOCK) {
+            gfloat *b = buf + (gsize)count * 4;
+            b[0] = mnL;
+            b[1] = mxL;
+            b[2] = stereo ? mnR : 0.0f;
+            b[3] = stereo ? mxR : 0.0f;
+            count++;
+            g_atomic_int_set(&t->rec_peak_count, count);
+            n = 0;
+            if (count >= JACKDAW_REC_PEAK_MAX_BLOCKS)
+                break;
+        }
+    }
+    t->rec_acc_n = n;
+    t->rec_acc_min[0] = mnL;
+    t->rec_acc_max[0] = mxL;
+    t->rec_acc_min[1] = mnR;
+    t->rec_acc_max[1] = mxR;
+}
+
 static void engine_process_track(int i)
 {
     JackDawTrack *t = engine.slots[i];
@@ -1264,34 +1324,18 @@ static void engine_process_track(int i)
             memset(bL, 0, want);
             memset(bR, 0, want);
         }
-        float mn = 0.0f, mx = 0.0f;
         for (k = 0; k < nframes; k++) {
-            float sl = live_L[k], sr = live_R[k];
-            bL[k] += sl;
-            bR[k] += sr;
-            if (sl < mn)
-                mn = sl;
-            if (sl > mx)
-                mx = sl;
-            if (sr < mn)
-                mn = sr;
-            if (sr > mx)
-                mx = sr;
+            bL[k] += live_L[k];
+            bR[k] += live_R[k];
         }
         /* Capture the dry input to the record ringbuffers (write-through to disk
-         * via the recorder thread) and append a live-waveform min/max bucket for
-         * the red overlay. A mono take writes only the L ring. */
+         * via the recorder thread). A mono take writes only the L ring. */
         if (recording) {
             if (t->rec_buf_L)
                 rt_ringbuffer_write(t->rec_buf_L, (const char *)live_L, want);
             if (t->stereo_input && t->rec_buf_R)
                 rt_ringbuffer_write(t->rec_buf_R, (const char *)live_R, want);
-            gint pk = t->rec_peak_count;
-            if (t->rec_peak_buf && pk < REC_PEAK_MAX_BUCKETS) {
-                t->rec_peak_buf[pk * 2] = mn;
-                t->rec_peak_buf[pk * 2 + 1] = mx;
-                t->rec_peak_count = pk + 1;
-            }
+            eng_rec_peaks_feed(t, live_L, live_R, nframes, blk_start);
         }
     }
 
@@ -1776,8 +1820,7 @@ static int engine_process(jd_nframes_t nframes, void *arg)
             continue;
         port_buf = be->port_buffer(engine.audio_out[i], nframes);
         if (i < 2)
-            memcpy(port_buf, (i == 0) ? engine.master_L : engine.master_R,
-                   nframes * sizeof(float));
+            memcpy(port_buf, (i == 0) ? engine.master_L : engine.master_R, nframes * sizeof(float));
         else
             memset(port_buf, 0, nframes * sizeof(float));
     }
@@ -2017,8 +2060,7 @@ gboolean jackdaw_engine_init(JackDawProject *project)
             }
         }
         if (!be) {
-            eng_backend_notice =
-                g_strdup_printf("JackDAW is running without audio.\n\n%s", err);
+            eng_backend_notice = g_strdup_printf("JackDAW is running without audio.\n\n%s", err);
             jackdaw_error(err);
             return TRUE;
         }
@@ -2864,12 +2906,16 @@ static gboolean recorder_open_slot(guint i, JackDawTrack *t, off_t start_frame,
     if (t->rec_buf_R)
         rt_ringbuffer_reset(t->rec_buf_R);
 
-    /* Live-waveform peak buffer (one min/max pair per JACK period), reused
-     * across takes; allocated once and freed at track finalize. */
+    /* Live-waveform peak table (fixed AUDIO_CLIP_PEAK_BLOCK blocks, two
+     * channels wide; see track.h), reused across takes and freed with the
+     * track. RECORDING isn't set yet, so the RT path is not feeding it. */
     if (!t->rec_peak_buf)
-        t->rec_peak_buf = g_new(gfloat, REC_PEAK_MAX_BUCKETS * 2);
-    t->rec_peak_count = 0;
-    t->rec_peak_block = be ? (gint)be->buffer_size() : 1024;
+        t->rec_peak_buf = g_new(gfloat, (gsize)JACKDAW_REC_PEAK_MAX_BLOCKS * 2 * 2);
+    t->rec_peak_channels = channels;
+    t->rec_peak_origin = start_frame;
+    t->rec_acc_n = 0;
+    t->rec_peak_started = FALSE;
+    g_atomic_int_set(&t->rec_peak_count, 0);
 
     /* Capture latency of the input port, for alignment compensation. The take
      * is placed by this one figure, so hold the backend to it until the take
@@ -3136,7 +3182,7 @@ void jackdaw_engine_finalize_takes(void)
                 g_error_free(err);
         }
         /* Stop the live overlay now that the real clip is on the timeline. */
-        rf->track->rec_peak_count = 0;
+        g_atomic_int_set(&rf->track->rec_peak_count, 0);
         g_object_unref(rf->track);
         g_free(rf);
     }

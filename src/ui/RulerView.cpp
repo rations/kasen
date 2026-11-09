@@ -18,6 +18,9 @@ static const int kMaxTicks = 256;
 static const float kMajorTickLen = 12.0f;
 static const float kMidTickLen = 8.0f;
 static const float kMinorTickLen = 4.0f;
+// When the visible span is shorter than this the finest time ticks (1 ms)
+// leave too few labels, so the ruler numbers samples instead.
+static const double kSampleRulerSpan = 0.004; // seconds
 
 RulerView::RulerView(TimelineView *timeline)
     : BView("ruler", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE), m_timeline(timeline),
@@ -42,10 +45,19 @@ void RulerView::Draw(BRect updateRect)
     font.SetSize(font.Size() * 0.85f);
     SetFont(&font);
 
-    if (m_timeline->Project()->ruler_mode == JACKDAW_RULER_BARS)
+    // Zoomed in to a few milliseconds neither bars nor milliseconds say
+    // anything useful: number the samples instead, in either mode. In bars
+    // mode, once a single beat is wider than half the view there are no bar
+    // lines left to label, so show time instead.
+    double sr = (double)jackdaw_engine_get_sample_rate();
+    double span = m_timeline->Spp() * (double)bounds.Width();
+    if (sr > 0.0 && span < kSampleRulerSpan * sr)
+        DrawTimeTicks(bounds, TIMEMODE_SAMPLES);
+    else if (m_timeline->Project()->ruler_mode == JACKDAW_RULER_BARS &&
+             !BeatWiderThan(bounds.Width() / 2.0f))
         DrawBarTicks(bounds);
     else
-        DrawTimeTicks(bounds);
+        DrawTimeTicks(bounds, TIMEMODE_REAL);
 
     DrawLoop(bounds);
 
@@ -59,7 +71,7 @@ void RulerView::Draw(BRect updateRect)
     }
 }
 
-void RulerView::DrawTimeTicks(BRect bounds)
+void RulerView::DrawTimeTicks(BRect bounds, int mode)
 {
     guint32 sr = jackdaw_engine_get_sample_rate();
     off_t start = m_timeline->ViewStart();
@@ -77,7 +89,7 @@ void RulerView::DrawTimeTicks(BRect bounds)
     if (nminor > kMaxTicks)
         nminor = kMaxTicks;
 
-    ruler_tick_positions(sr, start, end, major, &nmajor, mid, &nmid, minor, &nminor, TIMEMODE_REAL);
+    ruler_tick_positions(sr, start, end, major, &nmajor, mid, &nmid, minor, &nminor, mode);
 
     rgb_color fg = tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_4_TINT);
     rgb_color dim = tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_3_TINT);
@@ -92,6 +104,11 @@ void RulerView::DrawTimeTicks(BRect bounds)
         StrokeLine(BPoint(x, bounds.bottom - kMidTickLen), BPoint(x, bounds.bottom));
     }
 
+    // Labels a tenth of a second apart or closer need milliseconds to differ.
+    int label_mode = mode;
+    if (mode == TIMEMODE_REAL && nmajor >= 2 && (major[1] - major[0]) * 10 < (off_t)sr)
+        label_mode = TIMEMODE_REALLONG;
+
     SetHighColor(fg);
     font_height fh;
     GetFontHeight(&fh);
@@ -99,9 +116,18 @@ void RulerView::DrawTimeTicks(BRect bounds)
         float x = m_timeline->FrameToX(major[i]);
         StrokeLine(BPoint(x, bounds.bottom - kMajorTickLen), BPoint(x, bounds.bottom));
         char buf[64];
-        format_timecode(sr, major[i], 0, buf, TIMEMODE_REAL);
+        format_timecode(sr, major[i], 0, buf, label_mode);
         DrawString(buf, BPoint(x + 3, bounds.bottom - kMajorTickLen + 1));
     }
+}
+
+bool RulerView::BeatWiderThan(float px) const
+{
+    TempoMap tm;
+    tempomap_from_project(&tm, m_timeline->Project(), jackdaw_engine_get_sample_rate());
+    double fpbeat = tempomap_frames_per_beat(&tm);
+    double spp = m_timeline->Spp();
+    return spp > 0.0 && fpbeat / spp > (double)px;
 }
 
 void RulerView::DrawBarTicks(BRect bounds)

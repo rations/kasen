@@ -70,6 +70,15 @@ public:
     // to clear the indicator. Called by a TrackStripView mid-drag.
     void SetDropGap(int gap);
 
+    // Waveform vertical zoom (1 = full scale reaches the lane edge), shared by
+    // every lane. WaveZoomBy steps it up (+) or down (-).
+    void SetWaveZoom(float z);
+    void WaveZoomBy(int steps);
+    float WaveZoom() const
+    {
+        return m_wave_vzoom;
+    }
+
 private:
     void RepositionStrips();
     int RowAtY(float y) const; // track index under a lane y, or -1
@@ -100,6 +109,22 @@ private:
     void ShowContextMenu(JackDawTrack *t, off_t frame, BPoint screen_where);
     void ClearMovePre(); // free the pristine per-track move-undo copies
     void PushMoveUndo(); // combined multi-track move undo from m_move_pre
+
+    // Raw-sample windows of clips for the zoomed-in waveform (UI looper only).
+    struct WaveSampleCache {
+        AudioClip *clip = NULL; // reference held while cached
+        long long first = 0;    // file frame of data[0]
+        long long count = 0;    // frames held
+        int channels = 0;
+        unsigned long long stamp = 0; // LRU
+        std::vector<float> data;      // interleaved
+        ~WaveSampleCache();
+        void Reset();
+    };
+    const WaveSampleCache *WaveSamples(AudioClip *clip, long long need0, long long need1);
+    WaveSampleCache m_wave_cache[4];
+    unsigned long long m_wave_stamp = 0;
+    float m_wave_vzoom = 1.0f;
 
     TimelineView *m_timeline; // borrowed (parent)
     BMessenger m_main;        // MainWindow (for strip context/structural msgs)

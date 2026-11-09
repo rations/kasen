@@ -37,7 +37,7 @@ static void jackdaw_track_finalize(GObject *obj)
         rt_ringbuffer_free(t->rec_buf_R);
     if (t->midi_rec_buf)
         rt_ringbuffer_free(t->midi_rec_buf);
-    g_free((gpointer)t->rec_peak_buf);
+    g_free(t->rec_peak_buf);
 
     /* MIDI: drop the live snapshot + any retired ones, then the regions/clip. */
     if (t->rt_midi)
@@ -138,7 +138,10 @@ static void jackdaw_track_init(JackDawTrack *t)
     t->midi_rec_latency = 0;
     t->rec_peak_buf = NULL;
     t->rec_peak_count = 0;
-    t->rec_peak_block = 0;
+    t->rec_peak_channels = 1;
+    t->rec_peak_origin = 0;
+    t->rec_acc_n = 0;
+    t->rec_peak_started = FALSE;
     t->played_frames = 0;
 
     t->fx_list = g_ptr_array_new();

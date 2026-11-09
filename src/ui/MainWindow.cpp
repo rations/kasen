@@ -254,9 +254,9 @@ MainWindow::MainWindow(JackDawProject *project)
       m_mixer_window(NULL), m_mixer_visible(false), m_dock_h_applied(0.0f), m_load_panel(NULL),
       m_save_panel(NULL), m_open_panel(NULL), m_pending_action(PENDING_NONE),
       m_pending_save_as(false), m_quit_confirmed(false), m_backend_mediakit(NULL),
-      m_backend_jack(NULL), m_render_window(NULL),
-      m_render_thread(NULL), m_render_tick(NULL), m_render_method(RENDER_METHOD_OFFLINE),
-      m_render_active(false), m_track_added_h(0), m_track_removed_h(0), m_tracks_reordered_h(0)
+      m_backend_jack(NULL), m_render_window(NULL), m_render_thread(NULL), m_render_tick(NULL),
+      m_render_method(RENDER_METHOD_OFFLINE), m_render_active(false), m_track_added_h(0),
+      m_track_removed_h(0), m_tracks_reordered_h(0)
 {
     memset(&m_render_prog, 0, sizeof(m_render_prog));
     // Restore the saved window frame (defaults match the BWindow rect above).
@@ -469,6 +469,10 @@ BMenuBar *MainWindow::BuildMenuBar()
     BMenu *view = new BMenu("View");
     AddItem(view, "Zoom In", MSG_ZOOM_IN, '+', B_COMMAND_KEY);
     AddItem(view, "Zoom Out", MSG_ZOOM_OUT, '-', B_COMMAND_KEY);
+    view->AddSeparatorItem();
+    AddItem(view, "Taller Waveforms", MSG_WAVE_TALLER);
+    AddItem(view, "Shorter Waveforms", MSG_WAVE_SHORTER);
+    AddItem(view, "Reset Waveform Height", MSG_WAVE_RESET);
     view->AddSeparatorItem();
     BMenuItem *mix_win = new BMenuItem("Open Mixer in Window", new BMessage(MSG_MIXER_OPEN_WINDOW));
     mix_win->SetMarked(settings_get_uint32("mixer_in_window", 0) != 0);
@@ -1277,6 +1281,15 @@ void MainWindow::MessageReceived(BMessage *message)
             break;
         case MSG_ZOOM_OUT:
             m_timeline->ZoomBy(2.0, m_timeline->LaneWidth() / 2);
+            break;
+        case MSG_WAVE_TALLER:
+            m_timeline->TrackArea()->WaveZoomBy(1);
+            break;
+        case MSG_WAVE_SHORTER:
+            m_timeline->TrackArea()->WaveZoomBy(-1);
+            break;
+        case MSG_WAVE_RESET:
+            m_timeline->TrackArea()->SetWaveZoom(1.0f);
             break;
 
         case MSG_TRANSPORT_PLAY:

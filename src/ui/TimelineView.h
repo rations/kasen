@@ -51,6 +51,10 @@ public:
     float LaneWidth() const;
 
     void SetViewStart(off_t frame);
+    // The horizontal scrollbar moved (pixels at the current zoom). Ignored
+    // while UpdateScrollBar itself is setting the bar, so the bar's whole-pixel
+    // float value never feeds a rounded position back into the view.
+    void ScrollBarMoved(float value);
     // Zoom by `factor` (>1 zooms out), keeping lane x `center_x` stationary.
     void ZoomBy(double factor, float center_x);
 
@@ -90,6 +94,7 @@ private:
 
     off_t m_view_start;
     double m_spp;
+    bool m_syncing_scroll = false; // inside UpdateScrollBar (see ScrollBarMoved)
     off_t m_last_playhead;
     gulong m_timing_handler; // GObject signal handler id (0 = none)
 };

@@ -8,6 +8,9 @@ G_BEGIN_DECLS
 
 /* Frames per block-peak entry.  Smaller = finer resolution, more RAM. */
 #define AUDIO_CLIP_PEAK_BLOCK 256
+/* Coarser peak levels kept above the base table, and the step between them. */
+#define AUDIO_CLIP_PEAK_LEVELS 2
+#define AUDIO_CLIP_PEAK_FANOUT 16
 
 /*
  * AudioClip — a reference to an audio file with a pre-computed peak table
@@ -26,6 +29,13 @@ typedef struct {
 
     gfloat *block_peaks; /* owned; length = n_blocks * channels * 2 */
     guint32 n_blocks;
+
+    /* Coarser copies of block_peaks for zoomed-out drawing, same layout, each
+     * AUDIO_CLIP_PEAK_FANOUT times coarser than the one before:
+     * mip_peaks[0] = AUDIO_CLIP_PEAK_BLOCK * FANOUT frames per entry, [1] =
+     * that * FANOUT. Owned; NULL when the clip is too short to need one. */
+    gfloat *mip_peaks[AUDIO_CLIP_PEAK_LEVELS];
+    guint32 mip_blocks[AUDIO_CLIP_PEAK_LEVELS];
 
     gint refcount; /* shared across clip regions; new = 1 */
 } AudioClip;
@@ -55,6 +65,17 @@ void audio_clip_free(AudioClip *clip);
  */
 void audio_clip_get_peaks(AudioClip *clip, sf_count_t start, sf_count_t end, gint xres,
                           gfloat *out_min, gfloat *out_max);
+
+/*
+ * The query audio_clip_get_peaks runs, on any table in the block-peak layout
+ * above: `table` has n_blocks entries of `channels` (min,max) pairs, each
+ * covering `block` frames. Used directly for the live record waveform, whose
+ * table grows while it is drawn (pass the published block count).
+ * Same output contract as audio_clip_get_peaks (out arrays xres * channels).
+ */
+void audio_peak_table_query(const gfloat *table, guint32 n_blocks, int channels, int block,
+                            sf_count_t start, sf_count_t end, gint xres, gfloat *out_min,
+                            gfloat *out_max);
 
 /*
  * Read interleaved float frames from the file.
