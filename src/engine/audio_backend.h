@@ -66,7 +66,8 @@ typedef struct {
     void (*connections_changed)(void *arg);
 } JdBackendCallbacks;
 
-#define JD_BACKEND_ABI 2
+/* 3: port_connections. */
+#define JD_BACKEND_ABI 3
 
 /* A backend that changes its period while running (the buffer_size callback)
  * goes no higher than its period at open or this, whichever is longer; the
@@ -126,6 +127,13 @@ typedef struct JdBackend {
      * would move the rest of it. A backend that would otherwise add margin
      * after an input runs dry drops the late input instead. Non-RT. */
     void (*hold_latency)(int hold);
+
+    /* The ports one of ours is connected to, whoever made the connections
+     * (a patchbay as well as connect): fn is called once with each one's full
+     * name, as get_ports names them. 0 = listed (fn is not called when there
+     * are none); -1 = this backend cannot list this port's connections, so
+     * the caller has to go by what it connected itself. Non-RT. */
+    int (*port_connections)(JdPort *port, void (*fn)(const char *name, void *ctx), void *ctx);
 } JdBackend;
 
 /* Engine side: the backend named `which` ("jack", the default, or "mediakit").

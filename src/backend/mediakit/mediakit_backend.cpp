@@ -3640,6 +3640,45 @@ void mk_hold_latency(int hold)
     gHoldLatency.store(hold ? 1 : 0, std::memory_order_relaxed);
 }
 
+/* A MIDI port's connections, read from the roster so ones made in PatchBay
+ * or another patchbay count too: an input's producers, an output's consumers,
+ * named "midi:<endpoint>" as get_ports names them. Audio ports are not
+ * listed (-1): a capture port reads one channel of an input through its route
+ * and playback goes through the card's inputs, which are not one list to
+ * hand back yet. */
+int mk_port_connections(JdPort *jp, void (*fn)(const char *name, void *ctx), void *ctx)
+{
+    Port *port = (Port *)jp;
+    if (!gNode || !port || !fn || port->type != JD_PORT_MIDI)
+        return -1;
+    char name[192]; // as CaptureSource, which get_ports builds its names in
+    if (port->direction == JD_PORT_INPUT && port->midiIn) {
+        int32 id = 0;
+        while (BMidiProducer *p = BMidiRoster::NextProducer(&id)) {
+            if (p->IsRemote() && p->IsConnected(port->midiIn)) {
+                snprintf(name, sizeof name, "%s%s", kMidiPrefix, p->Name());
+                fn(name, ctx);
+            }
+            p->Release();
+        }
+        return 0;
+    }
+    if (port->direction == JD_PORT_OUTPUT && port->midiOut) {
+        BList *conns = port->midiOut->Connections(); // acquired consumers, ours to free
+        for (int32 i = 0; conns && i < conns->CountItems(); i++) {
+            BMidiConsumer *c = (BMidiConsumer *)conns->ItemAt(i);
+            if (c->IsRemote()) {
+                snprintf(name, sizeof name, "%s%s", kMidiPrefix, c->Name());
+                fn(name, ctx);
+            }
+            c->Release();
+        }
+        delete conns;
+        return 0;
+    }
+    return -1;
+}
+
 const JdBackend kMediaKitBackend = {
     JD_BACKEND_ABI,
     "Media Kit",
@@ -3663,6 +3702,7 @@ const JdBackend kMediaKitBackend = {
     mk_disconnect,
     mk_create_rt_thread,
     mk_hold_latency,
+    mk_port_connections,
 };
 
 } // namespace
