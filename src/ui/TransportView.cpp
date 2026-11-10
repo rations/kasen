@@ -1,5 +1,6 @@
 #include "TransportView.h"
 
+#include <Bitmap.h>
 #include <Button.h>
 #include <CheckBox.h>
 #include <Font.h>
@@ -10,6 +11,8 @@
 #include <StringView.h>
 #include <Window.h>
 
+#include <OS.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -88,53 +91,142 @@ private:
     BHandler *m_target;
 };
 
+// The play / record indicator right of the position readout, drawn with the
+// same HVIF icons as the transport buttons. During a count-in the play icon
+// blinks.
+class StateIconView : public BView
+{
+public:
+    enum State { NONE, PLAY, RECORD, RECORD_PUNCH, COUNT_IN };
+
+    StateIconView()
+        : BView("state", B_WILL_DRAW), m_state(NONE), m_blink_on(true), m_bitmap(NULL),
+          m_bitmap_state(NONE)
+    {
+        float px = StateButton::ButtonIconSize();
+        SetExplicitMinSize(BSize(px + 8.0f, px));
+        SetExplicitMaxSize(BSize(px + 8.0f, B_SIZE_UNLIMITED));
+    }
+
+    ~StateIconView() override
+    {
+        delete m_bitmap;
+    }
+
+    void AttachedToWindow() override
+    {
+        BView::AttachedToWindow();
+        SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
+    }
+
+    void SetState(State state)
+    {
+        bool blink_on = state != COUNT_IN || (system_time() / 250000) % 2 == 0;
+        if (state == m_state && blink_on == m_blink_on)
+            return;
+        m_state = state;
+        m_blink_on = blink_on;
+        Invalidate();
+    }
+
+    void Draw(BRect updateRect) override
+    {
+        (void)updateRect;
+        if (m_state == NONE || !m_blink_on)
+            return;
+        State icon_state = m_state == COUNT_IN ? PLAY : m_state;
+        float px = StateButton::ButtonIconSize();
+        if (!m_bitmap || m_bitmap_state != icon_state || m_bitmap->Bounds().Width() + 1 != px) {
+            delete m_bitmap;
+            size_t size = 0;
+            const uint8 *data = StateButton::IconFor(icon_state == PLAY ? StateButton::GLYPH_PLAY
+                                                                        : StateButton::GLYPH_RECORD,
+                                                     icon_state == RECORD_PUNCH, &size);
+            m_bitmap = data ? StateButton::RenderIcon(data, size, px) : NULL;
+            m_bitmap_state = icon_state;
+            if (!m_bitmap)
+                return;
+        }
+        BRect b = Bounds();
+        BPoint at(floorf((b.left + b.right - px) / 2 + 0.5f),
+                  floorf((b.top + b.bottom - px) / 2 + 0.5f));
+        SetDrawingMode(B_OP_ALPHA);
+        SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+        DrawBitmap(m_bitmap, at);
+        SetDrawingMode(B_OP_COPY);
+    }
+
+private:
+    State m_state;
+    bool m_blink_on;
+    BBitmap *m_bitmap;
+    State m_bitmap_state;
+};
+
 TransportView::TransportView(JackDawProject *project)
     : BView("transport", B_WILL_DRAW), m_project(project), m_timemode(TIMEMODE_REALLONG)
 {
-    m_rtz_button = new BButton("|◀", new BMessage(MSG_TRANSPORT_RTZ));
-    m_step_back = new BButton("|<<", new BMessage(MSG_TRANSPORT_STEP_BACK));
-    m_step_fwd = new BButton(">>|", new BMessage(MSG_TRANSPORT_STEP_FWD));
-    m_next_button = new BButton("▶|", new BMessage(MSG_TRANSPORT_NEXT_BOUNDARY));
-    // Loop and Record keep their glyph as a label for layout sizing only; the
-    // glyph itself is vector-drawn (StateButton::GLYPH_*), so the label text is
-    // never painted (the "⟳" tofu the default font renders never appears).
-    m_play_button = new StateButton("play", "▶", new BMessage(MSG_TRANSPORT_PLAY));
-    m_loop_button = new StateButton("loop", "⟳", new BMessage(MSG_TRANSPORT_LOOP));
-    m_pause_button = new BButton("||", new BMessage(MSG_TRANSPORT_PAUSE));
-    m_stop_button = new BButton("■", new BMessage(MSG_TRANSPORT_STOP));
+    // Vector-glyph transport buttons (StateButton draws them as filled
+    // shapes, so they never depend on a font carrying the symbols).
+    m_rtz_button = StateButton::MakeGlyphButton("rtz", StateButton::GLYPH_RTZ,
+                                                new BMessage(MSG_TRANSPORT_RTZ), "Go to start");
+    m_step_back = StateButton::MakeGlyphButton("step_back", StateButton::GLYPH_STEP_BACK,
+                                               new BMessage(MSG_TRANSPORT_STEP_BACK), "Step back");
+    m_step_fwd = StateButton::MakeGlyphButton("step_fwd", StateButton::GLYPH_STEP_FWD,
+                                              new BMessage(MSG_TRANSPORT_STEP_FWD), "Step forward");
+    m_next_button =
+        StateButton::MakeGlyphButton("next", StateButton::GLYPH_NEXT,
+                                     new BMessage(MSG_TRANSPORT_NEXT_BOUNDARY), "Next boundary");
+    m_play_button = StateButton::MakeGlyphButton("play", StateButton::GLYPH_PLAY,
+                                                 new BMessage(MSG_TRANSPORT_PLAY), "Play");
+    m_loop_button = StateButton::MakeGlyphButton("loop", StateButton::GLYPH_LOOP,
+                                                 new BMessage(MSG_TRANSPORT_LOOP), "Loop");
+    m_pause_button = StateButton::MakeGlyphButton("pause", StateButton::GLYPH_PAUSE,
+                                                  new BMessage(MSG_TRANSPORT_PAUSE), "Pause");
+    m_stop_button = StateButton::MakeGlyphButton("stop", StateButton::GLYPH_STOP,
+                                                 new BMessage(MSG_TRANSPORT_STOP), "Stop");
+    // Record keeps its right-click menu (Normal / Punch In/Out): a ContextButton
+    // sized like the rest.
     m_record_button =
-        new ContextButton("record", "●", new BMessage(MSG_TRANSPORT_RECORD), MSG_RECORD_MENU);
+        new ContextButton("record", "M", new BMessage(MSG_TRANSPORT_RECORD), MSG_RECORD_MENU);
+    m_record_button->SetGlyph(StateButton::GLYPH_RECORD);
+    m_record_button->SetToolTip("Record (right-click: Normal or Punch In/Out)");
+    m_record_button->SetExplicitMinSize(m_play_button->ExplicitMinSize());
+    m_record_button->SetExplicitMaxSize(m_play_button->ExplicitMaxSize());
 
     m_play_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_loop_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
     m_record_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
 
-    // State colours (match the original: Play green, Loop light-green with a
-    // drawn loop arrow so it never depends on a font glyph, Record red with a
-    // ring/bullseye glyph that differs between normal and punch modes).
+    // State colours: Play green, Loop light green, Record red (dot, or dot in
+    // a ring in punch mode).
     m_play_button->SetActiveColor((rgb_color){46, 139, 87, 255}, (rgb_color){255, 255, 255, 255});
-    m_loop_button->SetGlyph(StateButton::GLYPH_LOOP);
     m_loop_button->SetActiveColor((rgb_color){140, 230, 140, 255}, (rgb_color){16, 16, 16, 255});
-    m_record_button->SetGlyph(StateButton::GLYPH_RECORD);
     m_record_button->SetActiveColor((rgb_color){192, 57, 43, 255}, (rgb_color){255, 255, 255, 255});
 
     ClickableStringView *readout =
         new ClickableStringView("readout", "00:00.000", MSG_CYCLE_TIMEMODE);
     m_readout = readout;
-    m_state = new BStringView("state", "");
+    m_state = new StateIconView();
     BFont font(be_bold_font);
     font.SetSize(font.Size() * 1.6f);
     m_readout->SetFont(&font);
-    m_state->SetFont(&font);
     m_readout->SetAlignment(B_ALIGN_LEFT);
-    m_state->SetAlignment(B_ALIGN_LEFT);
 
-    m_split_button = new BButton("Split", new BMessage(MSG_SPLIT));
+    m_split_button =
+        StateButton::MakeGlyphButton("split", StateButton::GLYPH_SPLIT, new BMessage(MSG_SPLIT),
+                                     "Split the active track at the playhead");
     m_grid = new BCheckBox("Grid", new BMessage(MSG_TOGGLE_GRID));
     m_snap = new BCheckBox("Snap", new BMessage(MSG_TOGGLE_SNAP));
+    // Metro keeps its right-click menu (volume, count-in, click output).
     m_metro_button =
-        new ContextButton("metro", "Metro", new BMessage(MSG_TOGGLE_METRONOME), MSG_METRO_MENU);
+        new ContextButton("metro", "M", new BMessage(MSG_TOGGLE_METRONOME), MSG_METRO_MENU);
+    m_metro_button->SetGlyph(StateButton::GLYPH_METRONOME);
+    m_metro_button->SetToolTip("Metronome (right-click for options)");
+    m_metro_button->SetExplicitMinSize(m_play_button->ExplicitMinSize());
+    m_metro_button->SetExplicitMaxSize(m_play_button->ExplicitMaxSize());
     m_metro_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
+    m_metro_button->SetActiveColor((rgb_color){255, 190, 60, 255}, (rgb_color){16, 16, 16, 255});
     m_bars_mode = new BCheckBox("Bars", new BMessage(MSG_TOGGLE_RULER_MODE));
 
     m_bpm = new StepperControl("bpm", "BPM", new BMessage(MSG_SET_BPM), 20, 999, 1, 0);
@@ -145,6 +237,12 @@ TransportView::TransportView(JackDawProject *project)
         new ContextButton("mixer", "Mixer", new BMessage(MSG_MIXER_TOGGLE), MSG_MIXER_MENU);
     m_mixer_button->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
 
+    // An empty view as wide as the Mixer button, left of row 2, so the
+    // position readout sits in the true centre of the bar.
+    BView *balance = new BView("mixer_balance", 0);
+
+    // Row 1: transport, editing tools, then tempo on the right.
+    // Row 2: position readout and state icon centred, the mixer on the right.
     BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
         .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
         .SetInsets(B_USE_SMALL_INSETS, B_USE_SMALL_INSETS, B_USE_SMALL_INSETS, 0)
@@ -158,23 +256,23 @@ TransportView::TransportView(JackDawProject *project)
         .Add(m_pause_button)
         .Add(m_stop_button)
         .Add(m_record_button)
-        .AddStrut(12.0f)
-        .Add(m_readout)
-        .Add(m_state)
-        .AddGlue()
-        .End()
-        .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-        .SetInsets(B_USE_SMALL_INSETS, 0, B_USE_SMALL_INSETS, B_USE_SMALL_INSETS)
-        .Add(m_split_button)
-        .Add(m_metro_button)
         .Add(new BSeparatorView(B_VERTICAL))
+        .Add(m_split_button)
         .Add(m_grid)
         .Add(m_snap)
         .Add(m_bars_mode)
-        .AddStrut(12.0f)
+        .AddGlue()
+        .Add(m_metro_button)
         .Add(m_bpm)
         .Add(m_sig_num)
         .Add(m_sig_den)
+        .End()
+        .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+        .SetInsets(B_USE_SMALL_INSETS, B_USE_SMALL_SPACING, B_USE_SMALL_INSETS, B_USE_SMALL_INSETS)
+        .Add(balance)
+        .AddGlue()
+        .Add(m_readout)
+        .Add(m_state)
         .AddGlue()
         .Add(m_mixer_button)
         .End();
@@ -185,20 +283,13 @@ void TransportView::AttachedToWindow()
     BView::AttachedToWindow();
     SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
 
-    // Pin the readout and state indicator to fixed widths (widest expected
-    // strings) so the transport bar never re-flows when playback state or the
-    // position format changes.
-    float readout_w = m_readout->StringWidth("00:00:00.000");
-    float w = m_readout->StringWidth("9999.99.9999");
-    if (w > readout_w)
-        readout_w = w;
-    readout_w += 8.0f;
-    m_readout->SetExplicitMinSize(BSize(readout_w, B_SIZE_UNSET));
-    m_readout->SetExplicitMaxSize(BSize(readout_w, B_SIZE_UNSET));
-
-    float state_w = m_state->StringWidth("●") + 8.0f;
-    m_state->SetExplicitMinSize(BSize(state_w, B_SIZE_UNSET));
-    m_state->SetExplicitMaxSize(BSize(state_w, B_SIZE_UNSET));
+    // Balance the Mixer button so the centred readout is truly centred.
+    BView *balance = FindView("mixer_balance");
+    if (balance) {
+        BSize mixer = m_mixer_button->PreferredSize();
+        balance->SetExplicitMinSize(BSize(mixer.width, 0));
+        balance->SetExplicitMaxSize(BSize(mixer.width, B_SIZE_UNLIMITED));
+    }
 
     // Project-scoped controls apply on this looper; the readout cycles its own
     // timecode format. The transport/loop/mixer buttons keep their default
@@ -247,27 +338,40 @@ void TransportView::UpdateReadout()
     }
 
     m_readout->SetText(text);
+    FitReadout();
 
     bool playing = jackdaw_engine_is_playing();
     bool recording = jackdaw_engine_is_recording();
     bool counting = jackdaw_engine_is_counting_in();
 
+    bool punch = jackdaw_engine_get_record_mode() == RECORD_MODE_PUNCH;
     if (counting)
-        m_state->SetText("…");
+        m_state->SetState(StateIconView::COUNT_IN);
     else if (recording)
-        m_state->SetText("●");
+        m_state->SetState(punch ? StateIconView::RECORD_PUNCH : StateIconView::RECORD);
     else if (playing)
-        m_state->SetText("▶");
+        m_state->SetState(StateIconView::PLAY);
     else
-        m_state->SetText("");
+        m_state->SetState(StateIconView::NONE);
 
     // Reflect engine state on the toggle buttons (state can change via keyboard,
     // menu, count-in hand-off or loop, not only the buttons themselves).
     m_play_button->SetValue((playing || counting) ? B_CONTROL_ON : B_CONTROL_OFF);
     m_record_button->SetValue(recording ? B_CONTROL_ON : B_CONTROL_OFF);
-    m_record_button->SetRecordState(recording,
-                                    jackdaw_engine_get_record_mode() == RECORD_MODE_PUNCH);
+    m_record_button->SetRecordState(recording, punch);
     m_loop_button->SetValue(jackdaw_engine_get_loop_enabled() ? B_CONTROL_ON : B_CONTROL_OFF);
+}
+
+// Size the readout to its text, so the state icon sits right next to it. The
+// width only changes with the timecode format (digits are equal width), and
+// the glue either side of the readout absorbs it.
+void TransportView::FitReadout()
+{
+    float w = ceilf(m_readout->StringWidth(m_readout->Text())) + 6.0f;
+    if (fabsf(w - m_readout->ExplicitMinSize().width) < 0.5f)
+        return;
+    m_readout->SetExplicitMinSize(BSize(w, B_SIZE_UNSET));
+    m_readout->SetExplicitMaxSize(BSize(w, B_SIZE_UNSET));
 }
 
 void TransportView::MouseDown(BPoint where)

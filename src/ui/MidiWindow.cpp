@@ -367,20 +367,27 @@ MidiWindow::MidiWindow(JackDawTrack *track, JackDawProject *project, BWindow *ma
     SetTitle(title);
 
     // --- Transport toolbar — same buttons/order as the main window, no recording.
-    BButton *btn_start = new BButton("mw_rtz", "|◀", new BMessage(MSG_MW_RTZ));
-    BButton *btn_back = new BButton("mw_back", "|<<", new BMessage(MSG_MW_STEP_BACK));
-    BButton *btn_fwd = new BButton("mw_fwd", ">>|", new BMessage(MSG_MW_STEP_FWD));
-    BButton *btn_next = new BButton("mw_next", "▶|", new BMessage(MSG_MW_NEXT));
-    m_btn_play = new BButton("mw_play", "▶", new BMessage(MSG_MW_PLAY));
+    BButton *btn_start = StateButton::MakeGlyphButton("mw_rtz", StateButton::GLYPH_RTZ,
+                                                      new BMessage(MSG_MW_RTZ), "Go to start");
+    BButton *btn_back = StateButton::MakeGlyphButton("mw_back", StateButton::GLYPH_STEP_BACK,
+                                                     new BMessage(MSG_MW_STEP_BACK), "Step back");
+    BButton *btn_fwd = StateButton::MakeGlyphButton("mw_fwd", StateButton::GLYPH_STEP_FWD,
+                                                    new BMessage(MSG_MW_STEP_FWD), "Step forward");
+    BButton *btn_next = StateButton::MakeGlyphButton("mw_next", StateButton::GLYPH_NEXT,
+                                                     new BMessage(MSG_MW_NEXT), "Next boundary");
+    StateButton *play = StateButton::MakeGlyphButton("mw_play", StateButton::GLYPH_PLAY,
+                                                     new BMessage(MSG_MW_PLAY), "Play");
+    play->SetActiveColor((rgb_color){46, 139, 87, 255}, (rgb_color){255, 255, 255, 255});
+    m_btn_play = play;
     m_btn_play->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
-    // Loop keeps "⟳" as a label for layout sizing only; the icon is vector-drawn
-    // (GLYPH_LOOP) so it never depends on a font carrying that glyph.
-    m_btn_loop = new StateButton("mw_loop", "⟳", new BMessage(MSG_MW_LOOP));
+    m_btn_loop = StateButton::MakeGlyphButton("mw_loop", StateButton::GLYPH_LOOP,
+                                              new BMessage(MSG_MW_LOOP), "Loop");
     m_btn_loop->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
-    m_btn_loop->SetGlyph(StateButton::GLYPH_LOOP);
     m_btn_loop->SetActiveColor((rgb_color){140, 230, 140, 255}, (rgb_color){16, 16, 16, 255});
-    BButton *btn_pause = new BButton("mw_pause", "||", new BMessage(MSG_MW_PAUSE));
-    BButton *btn_stop = new BButton("mw_stop", "■", new BMessage(MSG_MW_STOP));
+    BButton *btn_pause = StateButton::MakeGlyphButton("mw_pause", StateButton::GLYPH_PAUSE,
+                                                      new BMessage(MSG_MW_PAUSE), "Pause");
+    BButton *btn_stop = StateButton::MakeGlyphButton("mw_stop", StateButton::GLYPH_STOP,
+                                                     new BMessage(MSG_MW_STOP), "Stop");
     m_time_label = new BStringView("mw_time", "00:00.0");
     m_btn_snap = new BButton("mw_snap", "Snap", new BMessage(MSG_MW_SNAP));
     m_btn_snap->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);

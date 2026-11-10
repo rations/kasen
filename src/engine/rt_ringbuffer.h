@@ -1,6 +1,6 @@
 /* rt_ringbuffer.h — lock-free single-producer / single-consumer byte ring.
  *
- * A drop-in for the subset of <jack/ringbuffer.h> JackDAW uses: same calls,
+ * A drop-in for the subset of <jack/ringbuffer.h> Kasen uses: same calls,
  * same arguments, same capacity rule (the size is rounded up to a power of
  * two and one byte of it is never filled), same "reset is not thread safe".
  * One deliberate difference: read_advance is clamped to what is readable, so
@@ -10,7 +10,7 @@
  * MIDI capture, render tap, preview and control queues) are not JACK objects,
  * and the engine is meant to run on more than one audio backend: tying them
  * to libjack would make libjack a dependency of every backend. Owning the
- * ring also makes the memory ordering a property of JackDAW rather than of
+ * ring also makes the memory ordering a property of Kasen rather than of
  * the libjack build in use: some libjacks do not order the data copy against
  * the index update, which is harmless on x86 but lets a weakly ordered CPU
  * read stale bytes.

@@ -20,8 +20,9 @@ public:
     void MessageReceived(BMessage *message) override;
 
 private:
-    void DrawTimeTicks(BRect bounds);
+    void DrawTimeTicks(BRect bounds, int mode); // mode: TIMEMODE_REAL or TIMEMODE_SAMPLES
     void DrawBarTicks(BRect bounds);
+    bool BeatWiderThan(float px) const; // one beat spans more than px pixels
     void DrawLoop(BRect bounds);
     // Hit-test x against the loop tabs: 1 = start tab, 2 = end tab, 0 = none.
     int LoopHit(float x) const;

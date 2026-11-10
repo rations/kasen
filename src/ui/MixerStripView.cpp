@@ -63,15 +63,20 @@ MixerStripView::MixerStripView(JackDawProject *project, JackDawTrack *track, con
     m_mute->SetActiveColor((rgb_color){230, 126, 34, 255}, (rgb_color){255, 255, 255, 255});
     m_mute->SetExplicitMinSize(btn);
     m_mute->SetExplicitMaxSize(btn);
+    m_mute->SetFont(be_bold_font);
+    m_mute->SetToolTip("Mute");
     if (track) {
         m_solo = new StateButton("S", "S", new BMessage(MSG_M_SOLO));
         m_solo->SetBehavior(BButton::B_TOGGLE_BEHAVIOR);
         m_solo->SetActiveColor((rgb_color){255, 224, 0, 255}, (rgb_color){16, 16, 16, 255});
         m_solo->SetExplicitMinSize(btn);
         m_solo->SetExplicitMaxSize(btn);
+        m_solo->SetFont(be_bold_font);
+        m_solo->SetToolTip("Solo");
         // Fx: opens this track's FX window (via MainWindow, shared with the track
         // strip); tinted blue whenever the track carries an effect chain.
-        m_fx = new StateButton("Fx", "Fx", new BMessage(MSG_M_FX));
+        m_fx = new StateButton("Fx", "FX", new BMessage(MSG_M_FX));
+        m_fx->SetFont(be_bold_font);
         m_fx->SetActiveColor((rgb_color){41, 128, 185, 255}, (rgb_color){255, 255, 255, 255});
         m_fx->SetActiveIgnoresValue(true); // momentary: blue tracks fx_count, not the click
         m_fx->SetToolTip("Effects (VST3 chain)");
@@ -111,12 +116,45 @@ void MixerStripView::AttachedToWindow()
     Sync();
 }
 
+// The name sits on a header bar (drawn in Draw): give the label the bar's
+// colours so it blends in; Master is set apart in blue. Done here, after the
+// children's own AttachedToWindow, which adopts the parent's colours.
+void MixerStripView::AllAttached()
+{
+    BView::AllAttached();
+    rgb_color bar = HeaderColor();
+    m_name->SetViewColor(bar);
+    m_name->SetLowColor(bar);
+    m_name->SetHighColor(m_track ? ui_color(B_PANEL_TEXT_COLOR) : (rgb_color){255, 255, 255, 255});
+    m_name->SetFont(be_bold_font);
+    m_name->Invalidate();
+}
+
+rgb_color MixerStripView::HeaderColor() const
+{
+    if (!m_track)
+        return (rgb_color){62, 104, 168, 255};
+    return tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_1_TINT);
+}
+
 void MixerStripView::Draw(BRect updateRect)
 {
     (void)updateRect;
-    // Divider on the right edge between channels.
     BRect b = Bounds();
-    SetHighColor(tint_color(ui_color(B_PANEL_BACKGROUND_COLOR), B_DARKEN_2_TINT));
+    rgb_color panel = ui_color(B_PANEL_BACKGROUND_COLOR);
+
+    // Header bar behind the name, full strip width.
+    BRect nf = m_name->Frame();
+    BRect bar(b.left + 1.0f, b.top, b.right - 1.0f, nf.bottom + 2.0f);
+    SetHighColor(HeaderColor());
+    FillRect(bar);
+    SetHighColor(tint_color(HeaderColor(), B_DARKEN_2_TINT));
+    StrokeLine(bar.LeftBottom(), bar.RightBottom());
+
+    // Bevelled edges: light on the left, a dark divider on the right.
+    SetHighColor(tint_color(panel, B_LIGHTEN_2_TINT));
+    StrokeLine(BPoint(b.left, b.top), BPoint(b.left, b.bottom));
+    SetHighColor(tint_color(panel, B_DARKEN_2_TINT));
     StrokeLine(BPoint(b.right, b.top), BPoint(b.right, b.bottom));
 }
 

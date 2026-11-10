@@ -579,7 +579,7 @@ off_t jackdaw_project_snap_frame(JackDawProject *p, off_t frame, guint32 sample_
 }
 
 /* ============================ Save / Load ===============================
- * One GKeyFile (.jdaw) inside a self-contained bundle directory. Boolean
+ * One GKeyFile (.kasen) inside a self-contained bundle directory. Boolean
  * convention: TRUE = failure, FALSE = success. All values read back are
  * validated/clamped before use (untrusted input). Ported from the Linux
  * JackDAW; adapted to this port's master model (the master bus is a pair of
@@ -704,8 +704,8 @@ gchar *jackdaw_default_projects_dir(void)
 {
     const gchar *music = g_get_user_special_dir(G_USER_DIRECTORY_MUSIC);
     gchar *dir = (music && *music)
-                     ? g_build_filename(music, "JackDAW", "Projects", NULL)
-                     : g_build_filename(g_get_home_dir(), "Music", "JackDAW", "Projects", NULL);
+                     ? g_build_filename(music, "Kasen", "Projects", NULL)
+                     : g_build_filename(g_get_home_dir(), "Music", "Kasen", "Projects", NULL);
     g_mkdir_with_parents(dir, 0755);
     return dir;
 }
@@ -741,7 +741,7 @@ static gboolean project_move_asset(const char *src, const char *dst)
  * source absolute path to its bundle-relative path ("audio/<name>"). Files
  * already inside the bundle are referenced in place; imported files are copied
  * (leaving the user's original untouched); live takes still in the scratch dir
- * (<settings>/JackDAW/recordings) are moved in and their clips repointed. Differing
+ * (<settings>/Kasen/recordings) are moved in and their clips repointed. Differing
  * sources sharing a basename are disambiguated with a numeric prefix. The
  * returned table is owned by the caller. */
 static GHashTable *project_collect_assets(JackDawProject *p, const char *audio_dir)
@@ -840,11 +840,13 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
         return TRUE;
 
     /* Resolve the bundle layout from `path`: a project is a directory <bundle>/
-     * holding <name>.jdaw plus audio/ with copies of every referenced sound. If
+     * holding <name>.kasen plus audio/ with copies of every referenced sound. If
      * `path` already sits inside a directory named after the project (a re-save),
      * reuse that directory rather than nesting a second level. */
     gchar *raw = g_path_get_basename(path);
-    gchar *name = g_str_has_suffix(raw, ".jdaw") ? g_strndup(raw, strlen(raw) - 5) : g_strdup(raw);
+    gchar *name = g_str_has_suffix(raw, JACKDAW_PROJECT_EXT)
+                      ? g_strndup(raw, strlen(raw) - strlen(JACKDAW_PROJECT_EXT))
+                      : g_strdup(raw);
     g_free(raw);
     if (!*name) {
         g_free(name);
@@ -865,7 +867,7 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
         g_free(audio_dir);
         return TRUE;
     }
-    gchar *jdaw_name = g_strconcat(name, ".jdaw", NULL);
+    gchar *jdaw_name = g_strconcat(name, JACKDAW_PROJECT_EXT, NULL);
     gchar *jdaw_path = g_build_filename(bundle, jdaw_name, NULL);
     g_free(jdaw_name);
 
@@ -874,6 +876,10 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
 
     GKeyFile *kf = g_key_file_new();
     g_key_file_set_double(kf, "project", "bpm", p->bpm);
+    /* The top comment becomes the first line, JACKDAW_PROJECT_HEADER (GKeyFile
+     * writes it as '#' + the text). */
+    if (!g_key_file_set_comment(kf, NULL, NULL, JACKDAW_PROJECT_HEADER + 1, NULL))
+        g_warning("project: could not write the file header");
     g_key_file_set_integer(kf, "project", "beats_per_bar", (gint)p->beats_per_bar);
     g_key_file_set_integer(kf, "project", "beat_unit", (gint)p->beat_unit);
     g_key_file_set_double(kf, "project", "master_volume", p->master_volume);
@@ -900,6 +906,8 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
         g_key_file_set_double(kf, grp, "trim", jackdaw_track_get_trim(t));
         g_key_file_set_double(kf, grp, "fader", jackdaw_track_get_fader(t));
         g_key_file_set_double(kf, grp, "pan", jackdaw_track_get_pan(t));
+        if (t->ui_height > 0)
+            g_key_file_set_integer(kf, grp, "height", t->ui_height);
         gint flags = (jackdaw_track_is_armed(t) ? 1 : 0) | (jackdaw_track_is_muted(t) ? 2 : 0) |
                      (jackdaw_track_is_soloed(t) ? 4 : 0);
         g_key_file_set_integer(kf, grp, "flags", flags);
@@ -993,7 +1001,7 @@ gboolean jackdaw_project_save(JackDawProject *p, const gchar *path)
     midicontrol_save_keyfile(kf);
 
     /* Roll the previous save into a single backup, overwritten on each save.
-     * Copy (not rename) so the live .jdaw survives if the write below fails. */
+     * Copy (not rename) so the live .kasen survives if the write below fails. */
     if (g_file_test(jdaw_path, G_FILE_TEST_EXISTS)) {
         gchar *bak = g_strconcat(jdaw_path, ".bak", NULL);
         GFile *s = g_file_new_for_path(jdaw_path);
@@ -1027,7 +1035,7 @@ gboolean jackdaw_project_load(JackDawProject *p, const gchar *path)
         return TRUE;
     }
 
-    /* Directory holding the .jdaw, used to resolve bundle-relative audio paths. */
+    /* Directory holding the .kasen, used to resolve bundle-relative audio paths. */
     gchar *projdir = g_path_get_dirname(path);
 
     /* Hold the RT graph off the plugins while we tear down the old chain and
@@ -1089,6 +1097,10 @@ gboolean jackdaw_project_load(JackDawProject *p, const gchar *path)
         jackdaw_track_set_trim(t, (gfloat)kf_dbl(kf, grp, "trim", 1.0));
         jackdaw_track_set_fader(t, (gfloat)kf_dbl(kf, grp, "fader", legacy_vol));
         jackdaw_track_set_pan(t, (gfloat)kf_dbl(kf, grp, "pan", 0.0));
+        /* Lane height (UI): 0/absent = default; anything else is clamped. */
+        gint ui_h = kf_int(kf, grp, "height", 0);
+        t->ui_height =
+            ui_h <= 0 ? 0 : CLAMP(ui_h, JACKDAW_TRACK_HEIGHT_MIN, JACKDAW_TRACK_HEIGHT_MAX);
         gint flags = kf_int(kf, grp, "flags", 0);
         jackdaw_track_set_armed(t, (flags & 1) != 0);
         jackdaw_track_set_muted(t, (flags & 2) != 0);
@@ -1112,7 +1124,7 @@ gboolean jackdaw_project_load(JackDawProject *p, const gchar *path)
             if (!g_key_file_has_group(kf, rg))
                 continue;
             gchar *rp = g_key_file_get_string(kf, rg, "path", NULL);
-            /* Bundle-relative paths resolve against the .jdaw's directory; legacy
+            /* Bundle-relative paths resolve against the .kasen's directory; legacy
              * absolute paths are used as-is. */
             gchar *abs = NULL;
             if (rp && rp[0] == '/')

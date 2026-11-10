@@ -6,7 +6,7 @@
 G_BEGIN_DECLS
 
 /*
- * Global undo/redo for JackDAW.
+ * Global undo/redo for Kasen.
  *
  * One chronological history for the whole project, owned by JackDawProject and
  * reachable from every window (main/midi/fx). A single Ctrl+Z undoes the last

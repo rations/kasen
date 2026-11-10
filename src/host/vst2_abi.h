@@ -1,4 +1,4 @@
-/* vst2_abi.h — minimal, clean-room VST 2.4 plug-in ABI for the jackDAW host.
+/* vst2_abi.h — minimal, clean-room VST 2.4 plug-in ABI for the Kasen host.
  *
  * This is an independent re-declaration of the well-known VST 2.4 binary
  * interface: the memory layout of `AEffect`, the dispatcher/audioMaster opcode

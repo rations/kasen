@@ -43,7 +43,7 @@ C_SOURCES   = src/engine/glib_check.c src/engine/message.c src/engine/settings.c
               src/engine/rt_ringbuffer.c src/engine/audio_backend.c
 CXX_SOURCES = src/ui/main.cpp src/ui/JackDawApp.cpp src/ui/MainWindow.cpp \
               src/ui/TransportView.cpp src/ui/TimelineView.cpp src/ui/RulerView.cpp \
-              src/ui/TrackAreaView.cpp src/ui/StepperControl.cpp \
+              src/ui/TrackAreaView.cpp src/ui/WaveDraw.cpp src/ui/StepperControl.cpp \
               src/ui/MetronomeWindows.cpp src/ui/KnobView.cpp src/ui/FaderView.cpp \
               src/ui/VuView.cpp src/ui/StateButton.cpp src/ui/TrackStripView.cpp src/ui/PortSelector.cpp src/ui/MixerStripView.cpp \
               src/ui/MixerView.cpp src/ui/MixerWindow.cpp src/ui/RegionGainWindow.cpp \
@@ -66,10 +66,10 @@ VERSION_PARTS := $(subst ., ,$(VERSION))
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(HOST_SOURCES:.cpp=.o) $(SDK_OBJECTS)
 DEPS    = $(OBJECTS:.o=.d)
-TARGET  = JackDAW
+TARGET  = Kasen
 
 # The JACK backend is an add-on that the engine loads at startup
-# (src/engine/audio_backend.c), so JackDAW itself never links libjack and runs
+# (src/engine/audio_backend.c), so Kasen itself never links libjack and runs
 # on a system without JACK. Plain C over libjack and the backend table.
 JACK_BACKEND = backends/jack.so
 
@@ -80,10 +80,18 @@ $(JACK_BACKEND): src/backend/jack/jack_backend.c src/engine/audio_backend.h
 	$(CC) -std=gnu99 -Wall -Wextra -fPIC -shared -I$(NONPACKAGED)/include -Isrc $< -o $@ \
 		-L$(NONPACKAGED)/lib -ljack
 
-$(TARGET): $(OBJECTS) VERSION
+# Application resources (signature, icon): the .rdef goes through the C
+# preprocessor for its #include, then rc, as Haiku's makefile-engine does.
+RSRC = src/ui/Kasen.rsrc
+$(RSRC): src/ui/Kasen.rdef src/ui/icons/kasen_icon.rdef
+	$(CC) -E -P -Isrc/ui -x c - < $< | grep -av '^#' | rc -o $@ -
+
+$(TARGET): $(OBJECTS) $(RSRC) VERSION
 	$(CXX) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+	xres -o $(TARGET) $(RSRC)
 	setversion $(TARGET) -app $(word 1,$(VERSION_PARTS)) $(word 2,$(VERSION_PARTS)) \
-		$(word 3,$(VERSION_PARTS)) -short $(VERSION) -long "JackDAW $(VERSION)"
+		$(word 3,$(VERSION_PARTS)) -short $(VERSION) -long "Kasen $(VERSION)"
+	mimeset -f $(TARGET)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -122,6 +130,6 @@ src/host/sdk_memorystream.o: $(VST3_SDK)/public.sdk/source/common/memorystream.c
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJECTS) $(DEPS) $(TARGET) $(JACK_BACKEND)
+	rm -f $(OBJECTS) $(DEPS) $(TARGET) $(JACK_BACKEND) $(RSRC)
 
 .PHONY: all clean

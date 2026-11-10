@@ -9,7 +9,7 @@ G_BEGIN_DECLS
 
 /*
  * jackdaw-engine: one client of the audio backend (audio_backend.h; JACK),
- * named "jackdaw".
+ * named "kasen".
  *
  * Phase-1 registered ports:
  *   audio output: out_1 (L master), out_2 (R master)
@@ -56,7 +56,7 @@ void jackdaw_engine_quit(void);
 gboolean jackdaw_engine_is_running(void);
 
 /* The audio backend jackdaw_engine_init opened: "mediakit" or "jack", NULL
- * when none opened. It is chosen by $JACKDAW_BACKEND, else the "audioBackend"
+ * when none opened. It is chosen by $KASEN_BACKEND, else the "audioBackend"
  * setting, else "mediakit"; a JACK that cannot be opened falls back to the
  * Media Kit. */
 const char *jackdaw_engine_get_backend(void);
@@ -248,7 +248,7 @@ void jackdaw_engine_render_tap_stop(void);
 gboolean jackdaw_engine_render_tap_done(void);
 
 /* Absolute path to the scratch-recordings directory
- * (<settings>/JackDAW/recordings), created if missing. Caller g_free()s it. */
+ * (<settings>/Kasen/recordings), created if missing. Caller g_free()s it. */
 gchar *jackdaw_recordings_dir(void);
 size_t jackdaw_engine_render_tap_read(float *L, float *R, size_t max_frames);
 

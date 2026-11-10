@@ -9,7 +9,7 @@ G_BEGIN_DECLS
 
 /*
  * MIDI control surface — maps incoming MIDI messages from a dedicated control
- * input (e.g. a guitar footswitch on jackdaw:control_in) to actions: FX bypass,
+ * input (e.g. a guitar footswitch on kasen:control_in) to actions: FX bypass,
  * wet/dry mix, plugin parameters, track mute, gapless track switching, and
  * transport. Modeled on the Reaper/Ardour "generic MIDI" approach: a binding
  * matches a message by {type, channel, number} and is populated via MIDI learn.

@@ -1,7 +1,9 @@
 #include "KnobView.h"
 
 #include <ControlLook.h>
+#include <GradientLinear.h>
 #include <Message.h>
+#include <Shape.h>
 #include <Window.h>
 
 #include <math.h>
@@ -96,6 +98,24 @@ void KnobView::FormatValue(char *buf, size_t len) const
     }
 }
 
+// Stroke an arc of radius r around (cx, cy) from angle a0 to a1 (radians,
+// screen coordinates, as the sweep constants) as a smooth polyline with the
+// current pen.
+void KnobView::StrokeArcPath(float cx, float cy, float r, double a0, double a1)
+{
+    int steps = (int)ceil(fabs(a1 - a0) / (M_PI / 36.0)); // 5 degree segments
+    if (steps < 1)
+        steps = 1;
+    BShape arc;
+    arc.MoveTo(BPoint(cx + (float)(r * cos(a0)), cy + (float)(r * sin(a0))));
+    for (int k = 1; k <= steps; k++) {
+        double a = a0 + (a1 - a0) * (double)k / (double)steps;
+        arc.LineTo(BPoint(cx + (float)(r * cos(a)), cy + (float)(r * sin(a))));
+    }
+    MovePenTo(B_ORIGIN);
+    StrokeShape(&arc);
+}
+
 void KnobView::Draw(BRect updateRect)
 {
     (void)updateRect;
@@ -115,21 +135,44 @@ void KnobView::Draw(BRect updateRect)
         t = 1.0;
     double ang = kStartAng + t * (kEndAng - kStartAng);
 
-    // Dial face.
-    SetHighColor(60, 60, 64);
-    FillEllipse(BPoint(cx, cy), r, r);
-    SetHighColor(90, 90, 96);
-    SetPenSize(1.0f);
-    StrokeEllipse(BPoint(cx, cy), r, r);
-
-    // Value pointer (bright line from centre to rim + a dot at the tip).
-    float px = cx + (float)((r - 1.5) * cos(ang));
-    float py = cy + (float)((r - 1.5) * sin(ang));
+    // Value track: a dark groove over the whole sweep, and the value as a
+    // coloured arc over it, starting from the default (centre for pan and
+    // trim, the minimum for a plain 0-based control).
+    float rt = kKnobDiam / 2.0f - 1.5f;
+    double t0 = (m_max > m_min) ? (m_default - m_min) / (m_max - m_min) : 0.0;
+    t0 = t0 < 0.0 ? 0.0 : (t0 > 1.0 ? 1.0 : t0);
+    double from = kStartAng + t0 * (kEndAng - kStartAng);
+    SetLineMode(B_ROUND_CAP, B_ROUND_JOIN);
+    SetPenSize(2.5f);
+    SetHighColor(tint_color(LowColor(), B_DARKEN_2_TINT));
+    StrokeArcPath(cx, cy, rt, kStartAng, kEndAng);
     SetHighColor(60, 150, 230);
+    if (fabs(ang - from) > 0.01)
+        StrokeArcPath(cx, cy, rt, from < ang ? from : ang, from < ang ? ang : from);
+    SetPenSize(1.0f);
+    SetLineMode(B_BUTT_CAP, B_MITER_JOIN);
+
+    // Dial: lit from above, with a dark rim.
+    float rb = r - 2.5f;
+    BGradientLinear face(BPoint(cx, cy - rb), BPoint(cx, cy + rb));
+    face.AddColor((rgb_color){118, 118, 126, 255}, 0);
+    face.AddColor((rgb_color){62, 62, 68, 255}, 160);
+    face.AddColor((rgb_color){42, 42, 46, 255}, 255);
+    FillEllipse(BPoint(cx, cy), rb, rb, face);
+    SetHighColor(20, 20, 22);
+    StrokeEllipse(BPoint(cx, cy), rb, rb);
+
+    // Pointer: a bright line from inside the dial to its rim.
+    float ix = cx + (float)((rb * 0.35) * cos(ang));
+    float iy = cy + (float)((rb * 0.35) * sin(ang));
+    float px = cx + (float)((rb - 1.0) * cos(ang));
+    float py = cy + (float)((rb - 1.0) * sin(ang));
+    SetHighColor(240, 240, 244);
     SetPenSize(2.0f);
-    StrokeLine(BPoint(cx, cy), BPoint(px, py));
-    SetHighColor(240, 240, 240);
-    FillEllipse(BPoint(px, py), 2.0f, 2.0f);
+    SetLineMode(B_ROUND_CAP, B_ROUND_JOIN);
+    StrokeLine(BPoint(ix, iy), BPoint(px, py));
+    SetPenSize(1.0f);
+    SetLineMode(B_BUTT_CAP, B_MITER_JOIN);
 
     // Centre identifier letter.
     if (m_center[0]) {

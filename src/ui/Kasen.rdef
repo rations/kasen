@@ -1,0 +1,16 @@
+// Kasen's application resources: signature (must match the BApplication
+// constructor), launch behaviour, the file types it opens, and the icon
+// Tracker and Deskbar show. The version resource is written by setversion at
+// link time, from VERSION.
+resource app_signature "application/x-vnd.kasen";
+
+// One instance per executable: a project opened from Tracker while Kasen runs
+// goes to the running instance instead of starting a second audio engine.
+resource app_flags B_SINGLE_LAUNCH;
+
+// Projects (the type is registered at startup; see JackDawApp).
+resource file_types message {
+	"types" = "application/x-vnd.kasen-project"
+};
+
+#include "icons/kasen_icon.rdef"

@@ -16,7 +16,7 @@
 
 int main(int argc, char **argv)
 {
-    // `JackDAW --scan-plugin VST3 <path>`: throwaway plugin-describe process
+    // `Kasen --scan-plugin VST3 <path>`: throwaway plugin-describe process
     // spawned by the catalog scan. Runs before any app/engine object so a
     // crashing third-party module can only take this helper down.
     int scan_rc = pluginhost_scan_helper_main(argc, argv);
@@ -64,12 +64,12 @@ int main(int argc, char **argv)
     if (restart && have_app_ref) {
         // The new instance would otherwise inherit an override of the choice
         // just made (BRoster::Launch passes this team's environment on).
-        unsetenv("JACKDAW_BACKEND");
+        unsetenv("KASEN_BACKEND");
         const char *args[1] = {restart_project.String()};
         int nargs = restart_project.Length() > 0 ? 1 : 0;
         status_t err = be_roster->Launch(&app_ref, nargs, args);
         if (err != B_OK)
-            fprintf(stderr, "JackDAW: could not start again: %s\n", strerror(err));
+            fprintf(stderr, "Kasen: could not start again: %s\n", strerror(err));
     }
 
     return EXIT_SUCCESS;

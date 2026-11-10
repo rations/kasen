@@ -1,4 +1,4 @@
-/* pluginhost_lv2.cpp — LV2 backend for the jackDAW plugin host.
+/* pluginhost_lv2.cpp — LV2 backend for the Kasen plugin host.
  *
  * Built on lilv/zix (the LV2-haiku sibling project's native stack). The
  * hosting core — feature allow-list, dual-mono instantiation, worker
@@ -68,7 +68,7 @@
 #define LPH_SYM_MAX 96
 #define LPH_RING_BYTES 8192
 #define LPH_MAX_PACKET 4096
-#define LPH_STATE_MAX (16u * 1024u * 1024u) /* untrusted .jdaw input bound */
+#define LPH_STATE_MAX (16u * 1024u * 1024u) /* untrusted .kasen input bound */
 
 /* ---- Host-wide state (owning window threads; never the RT thread) ---- */
 
@@ -1388,7 +1388,7 @@ extern "C" gboolean ph_lv2_param_is_stepped(PluginInstance *inst, guint i, gint 
     return FALSE;
 }
 
-/* ---- State (LV2 state extension via lilv; the blob stored in the .jdaw /
+/* ---- State (LV2 state extension via lilv; the blob stored in the .kasen /
  * .jdpreset is the Turtle serialization string) ---- */
 
 static const void *lph_get_port_value(const char *sym, void *user_data, uint32_t *size,
@@ -1447,7 +1447,7 @@ extern "C" gboolean ph_lv2_state_save(PluginInstance *inst, void **out, gsize *o
               : NULL;
     char *str = NULL;
     if (st) {
-        str = lilv_state_to_string(world, &lph_urid_map, &lph_urid_unmap, st, "urn:jackdaw:state",
+        str = lilv_state_to_string(world, &lph_urid_map, &lph_urid_unmap, st, "urn:kasen:state",
                                    NULL);
         lilv_state_free(st);
     }

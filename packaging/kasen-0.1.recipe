@@ -1,29 +1,29 @@
-# HaikuPorts recipe for JackDAW (native Haiku multitrack JACK DAW).
+# HaikuPorts recipe for Kasen (native multitrack JACK DAW).
 #
-# NOT YET VALIDATED with haikuporter. This is the most involved recipe: JackDAW builds
+# NOT YET VALIDATED with haikuporter. This is the most involved recipe: Kasen builds
 # against BOTH libjack (from the jack package) and the VST3-haiku SDK static libs, so
-# BUILD() first builds the SDK libs from the second source, then JackDAW. On the target:
+# BUILD() first builds the SDK libs from the second source, then Kasen. On the target:
 #   1. Pin SOURCE_URI / SOURCE_URI_2 to tags/commits with checksums.
 #   2. Confirm the $sourceDir2 layout and the VST3_LIB path after the SDK build with
-#      `haikuporter -c jackdaw`.
-SUMMARY="JackDAW - multitrack JACK DAW (native Haiku)"
-DESCRIPTION="A native Haiku multitrack DAW: audio and MIDI tracks, piano-roll editor, \
+#      `haikuporter -c kasen`.
+SUMMARY="Kasen - multitrack DAW for RenkuOS"
+DESCRIPTION="A native multitrack DAW: audio and MIDI tracks, piano-roll editor, \
 mixer, VST3 effects and instruments, MIDI control mapping, project save/load, and \
 offline/realtime render. A JACK client."
-HOMEPAGE="https://github.com/rations/jackDAW-haiku"
+HOMEPAGE="https://github.com/rations/kasen"
 COPYRIGHT="2026 rations; 2025 Steinberg Media Technologies GmbH"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="git+https://github.com/rations/jackDAW-haiku#master"
-SOURCE_DIR="jackDAW-haiku"
-# Second source: the VST3-haiku SDK JackDAW builds and links against.
+SOURCE_URI="git+https://github.com/rations/kasen#master"
+SOURCE_DIR="kasen"
+# Second source: the VST3-haiku SDK Kasen builds and links against.
 SOURCE_URI_2="git+https://github.com/rations/VST3-renku#master"
 SOURCE_DIR_2="VST3-haiku"
 ARCHITECTURES="x86_64"
 
 PROVIDES="
-	jackdaw = 0.1
-	app:JackDAW = 0.1
+	kasen = 0.1
+	app:Kasen = 0.1
 	"
 REQUIRES="
 	haiku
@@ -57,6 +57,6 @@ BUILD()
 INSTALL()
 {
 	mkdir -p $appsDir
-	cp JackDAW $appsDir/JackDAW
-	addAppDeskbarSymlink $appsDir/JackDAW
+	cp Kasen $appsDir/Kasen
+	addAppDeskbarSymlink $appsDir/Kasen
 }

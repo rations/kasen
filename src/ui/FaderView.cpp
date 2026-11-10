@@ -1,5 +1,6 @@
 #include "FaderView.h"
 
+#include <GradientLinear.h>
 #include <Message.h>
 #include <Window.h>
 
@@ -106,45 +107,76 @@ void FaderView::Draw(BRect updateRect)
 {
     (void)updateRect;
     BRect b = Bounds();
+    float tx = floorf(kFaderW / 2.0f);
+    float top = kSliderHalf;
+    float bottom = b.Height() - kSliderHalf;
 
-    // Slider trough (centred in the fader column).
-    float tx = kFaderW / 2.0f;
-    BRect trough(tx - 3.0f, kSliderHalf, tx + 3.0f, b.Height() - kSliderHalf);
-    SetHighColor(30, 30, 33);
-    FillRoundRect(trough, 3.0f, 3.0f);
-
-    // Filled level from the handle down to the bottom.
-    float hy = PosToY(m_pos);
-    BRect fill(trough.left, hy, trough.right, trough.bottom);
-    SetHighColor(70, 120, 90);
-    FillRoundRect(fill, 3.0f, 3.0f);
-
-    // Handle cap.
-    BRect cap(2.0f, hy - kSliderHalf, kFaderW - 2.0f, hy + kSliderHalf);
-    SetHighColor(200, 200, 206);
-    FillRoundRect(cap, 2.0f, 2.0f);
-    SetHighColor(120, 120, 126);
-    StrokeRoundRect(cap, 2.0f, 2.0f);
-    // Grip line across the cap.
-    SetHighColor(90, 90, 96);
-    StrokeLine(BPoint(cap.left + 2.0f, hy), BPoint(cap.right - 2.0f, hy));
-
-    // dB scale to the right (labels every 6 dB, ticks next to the slider).
+    // dB ticks either side of the slot, labels in the scale column. 0 dB is
+    // longer and brighter: it is where a fader rests.
     SetFontSize(9.0f);
     font_height fh;
     GetFontHeight(&fh);
-    rgb_color tick = {110, 110, 116, 255};
+    rgb_color panel = ui_color(B_PANEL_BACKGROUND_COLOR);
+    rgb_color tick = tint_color(panel, B_DARKEN_3_TINT);
     rgb_color lbl = ui_color(B_PANEL_TEXT_COLOR);
     for (int d = (int)kDbMax; d >= (int)kDbMin; d -= 6) {
-        float y = PosToY(db_to_pos((double)d));
-        SetHighColor(tick);
-        StrokeLine(BPoint(kFaderW, y), BPoint(kFaderW + 4.0f, y));
+        float y = floorf(PosToY(db_to_pos((double)d))) + 0.5f;
+        bool unity = d == 0;
+        SetHighColor(unity ? tint_color(panel, B_DARKEN_4_TINT) : tick);
+        float len = unity ? 6.0f : 4.0f;
+        StrokeLine(BPoint(tx - 4.0f - len, y), BPoint(tx - 5.0f, y));
+        StrokeLine(BPoint(tx + 5.0f, y), BPoint(tx + 4.0f + len, y));
         char m[8];
-        snprintf(m, sizeof(m), "%d", d);
+        snprintf(m, sizeof(m), d > 0 ? "+%d" : "%d", d);
         SetHighColor(lbl);
-        DrawString(m, BPoint(kFaderW + 6.0f, y + (fh.ascent - fh.descent) / 2.0f));
+        float tw = StringWidth(m);
+        DrawString(m, BPoint(kFaderW + kScaleW - 2.0f - tw, y + (fh.ascent - fh.descent) / 2.0f));
     }
     SetFontSize(be_plain_font->Size());
+
+    // Recessed slot: dark well, shadow on the top/left edges, light on the
+    // bottom/right.
+    BRect slot(tx - 3.0f, top, tx + 3.0f, bottom);
+    SetHighColor(24, 24, 26);
+    FillRect(slot);
+    SetHighColor(8, 8, 10);
+    StrokeLine(slot.LeftTop(), slot.RightTop());
+    StrokeLine(slot.LeftTop(), slot.LeftBottom());
+    SetHighColor(tint_color(panel, B_LIGHTEN_2_TINT));
+    StrokeLine(BPoint(slot.left, slot.bottom + 1.0f),
+               BPoint(slot.right + 1.0f, slot.bottom + 1.0f));
+    StrokeLine(BPoint(slot.right + 1.0f, slot.top), BPoint(slot.right + 1.0f, slot.bottom + 1.0f));
+
+    // Level fill from the cap down.
+    float hy = floorf(PosToY(m_pos)) + 0.5f;
+    BRect fill(slot.left + 1.0f, hy, slot.right - 1.0f, slot.bottom - 1.0f);
+    if (fill.IsValid()) {
+        BGradientLinear g(BPoint(fill.left, 0), BPoint(fill.right, 0));
+        g.AddColor((rgb_color){60, 150, 90, 255}, 0);
+        g.AddColor((rgb_color){110, 200, 130, 255}, 128);
+        g.AddColor((rgb_color){50, 120, 76, 255}, 255);
+        FillRect(fill, g);
+    }
+
+    // Cap: a console fader knob, lit from above, with a grip line across the
+    // middle; a soft shadow under it.
+    BRect cap(2.0f, hy - kSliderHalf, kFaderW - 2.0f, hy + kSliderHalf);
+    SetDrawingMode(B_OP_ALPHA);
+    SetHighColor(0, 0, 0, 60);
+    FillRoundRect(cap.OffsetByCopy(1.0f, 2.0f), 2.5f, 2.5f);
+    SetDrawingMode(B_OP_COPY);
+    BGradientLinear cg(BPoint(0, cap.top), BPoint(0, cap.bottom));
+    cg.AddColor((rgb_color){250, 250, 252, 255}, 0);
+    cg.AddColor((rgb_color){206, 206, 212, 255}, 110);
+    cg.AddColor((rgb_color){170, 170, 178, 255}, 140);
+    cg.AddColor((rgb_color){214, 214, 220, 255}, 255);
+    FillRoundRect(cap, 2.5f, 2.5f, cg);
+    SetHighColor(84, 84, 92);
+    StrokeRoundRect(cap, 2.5f, 2.5f);
+    SetHighColor(40, 40, 44);
+    StrokeLine(BPoint(cap.left + 2.0f, hy), BPoint(cap.right - 2.0f, hy));
+    SetHighColor(255, 255, 255);
+    StrokeLine(BPoint(cap.left + 2.0f, hy + 1.0f), BPoint(cap.right - 2.0f, hy + 1.0f));
 }
 
 void FaderView::MouseDown(BPoint where)

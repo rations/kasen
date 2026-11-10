@@ -195,7 +195,7 @@ static const JdBackend *engine_open_backend(const char *which, const JdBackendCa
             g_strlcpy(err, "No audio backend is available.", err_len);
         return NULL;
     }
-    if (b->open("jackdaw", cbs, NULL, err, err_len) != 0) {
+    if (b->open("kasen", cbs, NULL, err, err_len) != 0) {
         if (!err[0])
             g_strlcpy(err, "Could not open the audio system.", err_len);
         return NULL;
@@ -210,7 +210,7 @@ static volatile gint engine_xruns = 0;
  * only RT cost. */
 static volatile gint engine_cycles = 0;
 
-/* Diagnostics (JACKDAW_DIAG): per-cycle callback timing + xrun reporter, so a
+/* Diagnostics (KASEN_DIAG): per-cycle callback timing + xrun reporter, so a
  * missed deadline can be attributed to this callback vs. external scheduling. */
 static gboolean g_diag_on = FALSE;
 static volatile gint64 g_diag_cb_last_us = 0;
@@ -218,7 +218,7 @@ static volatile gint64 g_diag_cb_max_us = 0;
 static gint64 g_diag_period_us = 0;
 static GThread *g_diag_thread = NULL;
 static volatile gint g_diag_quit = 0;
-/* MIDI-path diagnostics (JACKDAW_DIAG): raw events seen on instrument midi_in
+/* MIDI-path diagnostics (KASEN_DIAG): raw events seen on instrument midi_in
  * ports, events written to the record ring, and the last instrument track's RT
  * state = (armed<<0)|(recording<<1)|(playing<<2). Isolates a dead JACK read from
  * a wrong gate. */
@@ -733,8 +733,6 @@ static void feeder_stop(void)
  * ----------------------------------------------------------------------- */
 
 #define REC_SCRATCH_FRAMES 4096
-/* Max JACK periods buffered for the live waveform (~46 min at 48k/1024). */
-#define REC_PEAK_MAX_BUCKETS 131072
 
 typedef struct {
     SNDFILE *sf;                    /* open for writing; NULL = idle */
@@ -995,7 +993,7 @@ static EngMidiEv eng_block_ev[JACKDAW_MAX_TRACKS][ENG_MIDI_MAX_EV];
 static int eng_block_nev[JACKDAW_MAX_TRACKS];
 
 /* This cycle's control-input MIDI (the footswitch), for the effect plug-ins.
- * The same messages drive JackDAW's MIDI options through eng_control_rb, so one
+ * The same messages drive Kasen's MIDI options through eng_control_rb, so one
  * press can mute a track and switch an amp plug-in's channel at once: a
  * plug-in with MIDI features of its own (MIDI learn, a footswitch) hears the
  * control input as a hardware amp would hear the pedal. Channel messages only.
@@ -1214,6 +1212,68 @@ static void *g_slot_midi_buf[JACKDAW_MAX_TRACKS];
  * metering, capture) into engine.slot_L[i]/slot_R[i]. Reads cycle params from
  * the g_rt_* publish slots and input buffers from g_slot_*. Runs on the JACK
  * thread or a worker; never calls the backend's port_buffer. */
+/* RT: fold one period of the dry capture into the track's live-waveform peak
+ * table, in fixed AUDIO_CLIP_PEAK_BLOCK-frame blocks per channel (the AudioClip
+ * layout, see track.h). The partial block carries over to the next period, so
+ * the blocks do not depend on the period length. Each finished block is
+ * written, then published by bumping rec_peak_count (g_atomic, a full
+ * barrier), so the UI never reads a half-written block. No allocation, locks
+ * or syscalls: the table was allocated when the take opened. */
+static void eng_rec_peaks_feed(JackDawTrack *t, const float *live_L, const float *live_R,
+                               jd_nframes_t nframes, off_t blk_start)
+{
+    gfloat *buf = t->rec_peak_buf;
+    if (!buf)
+        return;
+    gint count = g_atomic_int_get(&t->rec_peak_count);
+    if (count >= JACKDAW_REC_PEAK_MAX_BLOCKS)
+        return;
+    if (!t->rec_peak_started) {
+        t->rec_peak_origin = blk_start; /* published with the first block */
+        t->rec_peak_started = TRUE;
+        t->rec_acc_n = 0;
+    }
+    gboolean stereo = t->rec_peak_channels == 2;
+    gint n = t->rec_acc_n;
+    gfloat mnL = t->rec_acc_min[0], mxL = t->rec_acc_max[0];
+    gfloat mnR = t->rec_acc_min[1], mxR = t->rec_acc_max[1];
+    for (jd_nframes_t k = 0; k < nframes; k++) {
+        if (n == 0) {
+            mnL = mnR = 1.0f;
+            mxL = mxR = -1.0f;
+        }
+        gfloat l = live_L[k];
+        if (l < mnL)
+            mnL = l;
+        if (l > mxL)
+            mxL = l;
+        if (stereo) {
+            gfloat r = live_R[k];
+            if (r < mnR)
+                mnR = r;
+            if (r > mxR)
+                mxR = r;
+        }
+        if (++n == AUDIO_CLIP_PEAK_BLOCK) {
+            gfloat *b = buf + (gsize)count * 4;
+            b[0] = mnL;
+            b[1] = mxL;
+            b[2] = stereo ? mnR : 0.0f;
+            b[3] = stereo ? mxR : 0.0f;
+            count++;
+            g_atomic_int_set(&t->rec_peak_count, count);
+            n = 0;
+            if (count >= JACKDAW_REC_PEAK_MAX_BLOCKS)
+                break;
+        }
+    }
+    t->rec_acc_n = n;
+    t->rec_acc_min[0] = mnL;
+    t->rec_acc_max[0] = mxL;
+    t->rec_acc_min[1] = mnR;
+    t->rec_acc_max[1] = mxR;
+}
+
 static void engine_process_track(int i)
 {
     JackDawTrack *t = engine.slots[i];
@@ -1264,38 +1324,22 @@ static void engine_process_track(int i)
             memset(bL, 0, want);
             memset(bR, 0, want);
         }
-        float mn = 0.0f, mx = 0.0f;
         for (k = 0; k < nframes; k++) {
-            float sl = live_L[k], sr = live_R[k];
-            bL[k] += sl;
-            bR[k] += sr;
-            if (sl < mn)
-                mn = sl;
-            if (sl > mx)
-                mx = sl;
-            if (sr < mn)
-                mn = sr;
-            if (sr > mx)
-                mx = sr;
+            bL[k] += live_L[k];
+            bR[k] += live_R[k];
         }
         /* Capture the dry input to the record ringbuffers (write-through to disk
-         * via the recorder thread) and append a live-waveform min/max bucket for
-         * the red overlay. A mono take writes only the L ring. */
+         * via the recorder thread). A mono take writes only the L ring. */
         if (recording) {
             if (t->rec_buf_L)
                 rt_ringbuffer_write(t->rec_buf_L, (const char *)live_L, want);
             if (t->stereo_input && t->rec_buf_R)
                 rt_ringbuffer_write(t->rec_buf_R, (const char *)live_R, want);
-            gint pk = t->rec_peak_count;
-            if (t->rec_peak_buf && pk < REC_PEAK_MAX_BUCKETS) {
-                t->rec_peak_buf[pk * 2] = mn;
-                t->rec_peak_buf[pk * 2 + 1] = mx;
-                t->rec_peak_count = pk + 1;
-            }
+            eng_rec_peaks_feed(t, live_L, live_R, nframes, blk_start);
         }
     }
 
-    /* MIDI-path diagnostics (JACKDAW_DIAG): count raw events on this instrument
+    /* MIDI-path diagnostics (KASEN_DIAG): count raw events on this instrument
      * track's midi_in BEFORE any arm/record gate, and expose the gate state, so
      * a dead port read can be told apart from a wrong gate. Counters are atomic:
      * several workers may touch them in the same cycle. */
@@ -1441,7 +1485,7 @@ static int engine_process(jd_nframes_t nframes, void *arg)
     float *port_buf;
     jd_nframes_t k;
 
-    /* Diagnostics: time the whole cycle (JACKDAW_DIAG only). */
+    /* Diagnostics: time the whole cycle (KASEN_DIAG only). */
     gint64 diag_t0 = 0;
     if (g_diag_on)
         diag_t0 = g_get_monotonic_time();
@@ -1776,8 +1820,7 @@ static int engine_process(jd_nframes_t nframes, void *arg)
             continue;
         port_buf = be->port_buffer(engine.audio_out[i], nframes);
         if (i < 2)
-            memcpy(port_buf, (i == 0) ? engine.master_L : engine.master_R,
-                   nframes * sizeof(float));
+            memcpy(port_buf, (i == 0) ? engine.master_L : engine.master_R, nframes * sizeof(float));
         else
             memset(port_buf, 0, nframes * sizeof(float));
     }
@@ -1990,11 +2033,11 @@ gboolean jackdaw_engine_init(JackDawProject *project)
             engine_process,     engine_buffer_size_cb, engine_thread_init_cb,  engine_xrun_cb,
             engine_shutdown_cb, engine_port_reg_cb,    engine_port_connect_cb,
         };
-        /* The Media Kit (the RenkuOS media services) unless JACKDAW_BACKEND
+        /* The Media Kit (the RenkuOS media services) unless KASEN_BACKEND
          * or the "audioBackend" setting (Options -> Audio System) says "jack".
          * JACK joins only a server the user already started; when that fails,
          * run on the Media Kit and say why rather than run without audio. */
-        const char *env = g_getenv("JACKDAW_BACKEND");
+        const char *env = g_getenv("KASEN_BACKEND");
         gchar *which = env ? g_strdup(env) : settings_get_string("audioBackend", "mediakit");
         const char *key = strcmp(which, "jack") == 0 ? "jack" : "mediakit";
         g_free(which);
@@ -2008,7 +2051,7 @@ gboolean jackdaw_engine_init(JackDawProject *project)
             if (be) {
                 key = "mediakit";
                 eng_backend_notice = g_strdup_printf(
-                    "JACK could not be used, so JackDAW is running on the Media Kit.\n\n%s\n\n"
+                    "JACK could not be used, so Kasen is running on the Media Kit.\n\n%s\n\n"
                     "Start the JACK server, then choose Options \xe2\x86\x92 Audio System "
                     "\xe2\x86\x92 JACK.",
                     err);
@@ -2017,8 +2060,7 @@ gboolean jackdaw_engine_init(JackDawProject *project)
             }
         }
         if (!be) {
-            eng_backend_notice =
-                g_strdup_printf("JackDAW is running without audio.\n\n%s", err);
+            eng_backend_notice = g_strdup_printf("Kasen is running without audio.\n\n%s", err);
             jackdaw_error(err);
             return TRUE;
         }
@@ -2111,7 +2153,7 @@ gboolean jackdaw_engine_init(JackDawProject *project)
 
     /* Activate — after this the process callback can be called at any time */
     if (be->activate() != 0) {
-        jackdaw_error("jackdaw: could not activate the audio client");
+        jackdaw_error("kasen: could not activate the audio client");
         goto fail;
     }
 
@@ -2151,13 +2193,13 @@ gboolean jackdaw_engine_init(JackDawProject *project)
 
     /* Spawn the RT-priority worker pool for parallel track processing. Count
      * defaults to (CPU cores − 1) so the JACK thread itself is the Nth worker;
-     * override with JACKDAW_RT_THREADS (0 = serial, for A/B comparison). Workers
+     * override with KASEN_RT_THREADS (0 = serial, for A/B comparison). Workers
      * are created by the backend so they get its real-time scheduling (JACK's
      * jack_client_create_thread) — a plain pthread would be preempted and make
      * xruns worse. */
     {
         int want = (int)g_get_num_processors() - 1;
-        const char *env = g_getenv("JACKDAW_RT_THREADS");
+        const char *env = g_getenv("KASEN_RT_THREADS");
         if (env)
             want = atoi(env);
         if (want < 0)
@@ -2181,16 +2223,16 @@ gboolean jackdaw_engine_init(JackDawProject *project)
                 sem_destroy(&g_rt_sem_done);
             }
         }
-        g_message("jackdaw: %d RT worker thread(s) for parallel track processing (%d cores)",
+        g_message("kasen: %d RT worker thread(s) for parallel track processing (%d cores)",
                   g_rt_nworkers, (int)g_get_num_processors());
     }
 
-    /* Diagnostics: only when JACKDAW_DIAG is set. */
-    g_diag_on = (g_getenv("JACKDAW_DIAG") != NULL);
+    /* Diagnostics: only when KASEN_DIAG is set. */
+    g_diag_on = (g_getenv("KASEN_DIAG") != NULL);
     if (g_diag_on) {
         g_diag_period_us = sr ? (gint64)bs * 1000000 / sr : 0;
         g_atomic_int_set(&g_diag_quit, 0);
-        g_diag_thread = g_thread_new("jackdaw-diag", diag_thread_func, NULL);
+        g_diag_thread = g_thread_new("kasen-diag", diag_thread_func, NULL);
         g_message("[diag] enabled: buf=%u period=%ldus — watching xruns / callback time", bs,
                   (long)g_diag_period_us);
     }
@@ -2377,7 +2419,7 @@ gboolean jackdaw_engine_add_track(JackDawTrack *track)
             break;
     }
     if (i == JACKDAW_MAX_TRACKS) {
-        jackdaw_error("jackdaw: maximum track count reached");
+        jackdaw_error("kasen: maximum track count reached");
         return TRUE;
     }
 
@@ -2391,7 +2433,7 @@ gboolean jackdaw_engine_add_track(JackDawTrack *track)
         track->play_buf_L = rt_ringbuffer_create(rb_bytes);
         track->play_buf_R = rt_ringbuffer_create(rb_bytes);
         if (!track->play_buf_L || !track->play_buf_R) {
-            jackdaw_error("jackdaw: ringbuffer allocation failed");
+            jackdaw_error("kasen: ringbuffer allocation failed");
             if (track->play_buf_L)
                 rt_ringbuffer_free(track->play_buf_L);
             if (track->play_buf_R)
@@ -2805,12 +2847,12 @@ gboolean jackdaw_engine_set_audio_out_count(guint n)
 gchar *jackdaw_recordings_dir(void)
 {
     /* Scratch recordings live under the Haiku settings hierarchy
-     * (<settings>/JackDAW/recordings), resolved via find_directory rather than a
+     * (<settings>/Kasen/recordings), resolved via find_directory rather than a
      * hidden dot-directory in $HOME. Created if missing. */
     char base[B_PATH_NAME_LENGTH];
     if (find_directory(B_USER_SETTINGS_DIRECTORY, -1, true, base, sizeof(base)) != B_OK)
         g_strlcpy(base, "/boot/home/config/settings", sizeof(base));
-    gchar *dir = g_build_filename(base, "JackDAW", "recordings", NULL);
+    gchar *dir = g_build_filename(base, "Kasen", "recordings", NULL);
     g_mkdir_with_parents(dir, 0700);
     return dir;
 }
@@ -2844,7 +2886,7 @@ static gboolean recorder_open_slot(guint i, JackDawTrack *t, off_t start_frame,
 
     SNDFILE *sf = sf_open(recorder_slots[i].path, SFM_WRITE, &sfi);
     if (!sf) {
-        g_warning("jackdaw: could not open recording file %s: %s", recorder_slots[i].path,
+        g_warning("kasen: could not open recording file %s: %s", recorder_slots[i].path,
                   sf_strerror(NULL));
         return FALSE;
     }
@@ -2864,12 +2906,16 @@ static gboolean recorder_open_slot(guint i, JackDawTrack *t, off_t start_frame,
     if (t->rec_buf_R)
         rt_ringbuffer_reset(t->rec_buf_R);
 
-    /* Live-waveform peak buffer (one min/max pair per JACK period), reused
-     * across takes; allocated once and freed at track finalize. */
+    /* Live-waveform peak table (fixed AUDIO_CLIP_PEAK_BLOCK blocks, two
+     * channels wide; see track.h), reused across takes and freed with the
+     * track. RECORDING isn't set yet, so the RT path is not feeding it. */
     if (!t->rec_peak_buf)
-        t->rec_peak_buf = g_new(gfloat, REC_PEAK_MAX_BUCKETS * 2);
-    t->rec_peak_count = 0;
-    t->rec_peak_block = be ? (gint)be->buffer_size() : 1024;
+        t->rec_peak_buf = g_new(gfloat, (gsize)JACKDAW_REC_PEAK_MAX_BLOCKS * 2 * 2);
+    t->rec_peak_channels = channels;
+    t->rec_peak_origin = start_frame;
+    t->rec_acc_n = 0;
+    t->rec_peak_started = FALSE;
+    g_atomic_int_set(&t->rec_peak_count, 0);
 
     /* Capture latency of the input port, for alignment compensation. The take
      * is placed by this one figure, so hold the backend to it until the take
@@ -3130,13 +3176,13 @@ void jackdaw_engine_finalize_takes(void)
             rf->track->clip_start = tl;
             jackdaw_track_place_clip_from(rf->track, clip, trim, tl); /* consumes clip ref */
         } else {
-            g_warning("jackdaw: could not load recording %s: %s", rf->path,
+            g_warning("kasen: could not load recording %s: %s", rf->path,
                       err ? err->message : "unknown");
             if (err)
                 g_error_free(err);
         }
         /* Stop the live overlay now that the real clip is on the timeline. */
-        rf->track->rec_peak_count = 0;
+        g_atomic_int_set(&rf->track->rec_peak_count, 0);
         g_object_unref(rf->track);
         g_free(rf);
     }

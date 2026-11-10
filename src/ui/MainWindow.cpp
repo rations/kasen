@@ -14,6 +14,8 @@
 #include <MessageFilter.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
+#include <Node.h>
+#include <NodeInfo.h>
 #include <Path.h>
 #include <PopUpMenu.h>
 #include <String.h>
@@ -247,16 +249,16 @@ static BMenuItem *AddItem(BMenu *menu, const char *label, uint32 what, char shor
 }
 
 MainWindow::MainWindow(JackDawProject *project)
-    : BWindow(BRect(100, 100, 1100, 700), "JackDAW", B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
+    : BWindow(BRect(100, 100, 1100, 700), "Kasen", B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
       m_project(project), m_transport(NULL), m_timeline(NULL), m_tick_runner(NULL),
       m_metro_volume_window(NULL), m_countin_window(NULL), m_io_window(NULL),
       m_midictl_window(NULL), m_midictl_tick(NULL), m_mixer(NULL), m_mixer_item(NULL),
       m_mixer_window(NULL), m_mixer_visible(false), m_dock_h_applied(0.0f), m_load_panel(NULL),
       m_save_panel(NULL), m_open_panel(NULL), m_pending_action(PENDING_NONE),
       m_pending_save_as(false), m_quit_confirmed(false), m_backend_mediakit(NULL),
-      m_backend_jack(NULL), m_render_window(NULL),
-      m_render_thread(NULL), m_render_tick(NULL), m_render_method(RENDER_METHOD_OFFLINE),
-      m_render_active(false), m_track_added_h(0), m_track_removed_h(0), m_tracks_reordered_h(0)
+      m_backend_jack(NULL), m_render_window(NULL), m_render_thread(NULL), m_render_tick(NULL),
+      m_render_method(RENDER_METHOD_OFFLINE), m_render_active(false), m_track_added_h(0),
+      m_track_removed_h(0), m_tracks_reordered_h(0)
 {
     memset(&m_render_prog, 0, sizeof(m_render_prog));
     // Restore the saved window frame (defaults match the BWindow rect above).
@@ -297,9 +299,9 @@ MainWindow::MainWindow(JackDawProject *project)
     AddCommonFilter(new TransportKeyFilter());
     AddCommonFilter(new FocusReleaseFilter());
 
-    // Diagnostic switch: JACKDAW_NO_TICK=1 disables the periodic UI refresh,
+    // Diagnostic switch: KASEN_NO_TICK=1 disables the periodic UI refresh,
     // to isolate whether the 30 Hz redraw traffic is implicated in xruns.
-    if (getenv("JACKDAW_NO_TICK") == NULL)
+    if (getenv("KASEN_NO_TICK") == NULL)
         m_tick_runner =
             new BMessageRunner(BMessenger(this), BMessage(MSG_UI_TICK), kTickIntervalUsec);
 
@@ -470,6 +472,10 @@ BMenuBar *MainWindow::BuildMenuBar()
     AddItem(view, "Zoom In", MSG_ZOOM_IN, '+', B_COMMAND_KEY);
     AddItem(view, "Zoom Out", MSG_ZOOM_OUT, '-', B_COMMAND_KEY);
     view->AddSeparatorItem();
+    AddItem(view, "Taller Waveforms", MSG_WAVE_TALLER);
+    AddItem(view, "Shorter Waveforms", MSG_WAVE_SHORTER);
+    AddItem(view, "Reset Waveform Height", MSG_WAVE_RESET);
+    view->AddSeparatorItem();
     BMenuItem *mix_win = new BMenuItem("Open Mixer in Window", new BMessage(MSG_MIXER_OPEN_WINDOW));
     mix_win->SetMarked(settings_get_uint32("mixer_in_window", 0) != 0);
     view->AddItem(mix_win);
@@ -485,7 +491,7 @@ BMenuBar *MainWindow::BuildMenuBar()
     options->AddSeparatorItem();
     // Audio System — which backend the engine runs on. The engine opens it
     // once at startup (ports, routes and plug-ins are set up for its rate and
-    // period), so a change restarts JackDAW with the same project.
+    // period), so a change restarts Kasen with the same project.
     BMenu *audio = new BMenu("Audio System");
     audio->SetRadioMode(true);
     BMessage *mk = new BMessage(MSG_OPT_BACKEND);
@@ -713,13 +719,13 @@ void MainWindow::UpdateTitle()
     if (f && *f) {
         gchar *base = g_path_get_basename(f);
         BString title(base);
-        if (title.EndsWith(".jdaw"))
-            title.Truncate(title.Length() - 5);
-        title << " — JackDAW";
+        if (title.EndsWith(JACKDAW_PROJECT_EXT))
+            title.Truncate(title.Length() - strlen(JACKDAW_PROJECT_EXT));
+        title << " — Kasen";
         SetTitle(title.String());
         g_free(base);
     } else {
-        SetTitle("JackDAW");
+        SetTitle("Kasen");
     }
 }
 
@@ -736,8 +742,16 @@ bool MainWindow::SaveProjectTo(const char *path)
     }
     UpdateTitle();
     const gchar *saved = jackdaw_project_get_file(m_project);
-    if (saved && *saved)
+    if (saved && *saved) {
         settings_set_string("last_project", saved);
+        // Tag the file as a Kasen project (save replaces the file, so every
+        // save does this), so Tracker shows its icon and opens it in Kasen.
+        BNode node(saved);
+        BNodeInfo info(&node);
+        if (node.InitCheck() != B_OK || info.InitCheck() != B_OK ||
+            info.SetType(JACKDAW_PROJECT_MIME) != B_OK)
+            g_warning("could not set the file type of %s", saved);
+    }
     settings_save();
     return true;
 }
@@ -821,8 +835,8 @@ void MainWindow::ShowSaveAsPanel()
     if (cur && *cur) {
         gchar *base = g_path_get_basename(cur);
         BString leaf(base);
-        if (leaf.EndsWith(".jdaw"))
-            leaf.Truncate(leaf.Length() - 5);
+        if (leaf.EndsWith(JACKDAW_PROJECT_EXT))
+            leaf.Truncate(leaf.Length() - strlen(JACKDAW_PROJECT_EXT));
         m_save_panel->SetSaveText(leaf.String());
         g_free(base);
     } else {
@@ -1278,6 +1292,15 @@ void MainWindow::MessageReceived(BMessage *message)
         case MSG_ZOOM_OUT:
             m_timeline->ZoomBy(2.0, m_timeline->LaneWidth() / 2);
             break;
+        case MSG_WAVE_TALLER:
+            m_timeline->TrackArea()->WaveZoomBy(1);
+            break;
+        case MSG_WAVE_SHORTER:
+            m_timeline->TrackArea()->WaveZoomBy(-1);
+            break;
+        case MSG_WAVE_RESET:
+            m_timeline->TrackArea()->SetWaveZoom(1.0f);
+            break;
 
         case MSG_TRANSPORT_PLAY:
             TransportPlay();
@@ -1424,7 +1447,7 @@ void MainWindow::MessageReceived(BMessage *message)
             ShowOpenPanel();
             break;
         case MSG_OPEN_PROJECT_REFS: {
-            // Selection from the "Open Project" panel (a .jdaw file).
+            // Selection from the "Open Project" panel (a .kasen file).
             entry_ref ref;
             if (message->FindRef("refs", 0, &ref) == B_OK) {
                 BEntry entry(&ref, true);
@@ -1592,7 +1615,7 @@ void MainWindow::MessageReceived(BMessage *message)
             if (have && strcmp(have, want) == 0)
                 break; // already on it
             m_restart_backend = want;
-            BString question("JackDAW restarts to use ");
+            BString question("Kasen restarts to use ");
             question << (strcmp(want, "jack") == 0 ? "JACK" : "the Media Kit")
                      << ". Save changes first?";
             ConfirmSaveThen(PENDING_RESTART, question.String());
@@ -1600,7 +1623,7 @@ void MainWindow::MessageReceived(BMessage *message)
         }
         case MSG_OPEN_PROJECT_PATH: {
             // A project named at launch (a restart onto another audio system,
-            // or `JackDAW file.jdaw`).
+            // or `Kasen file.kasen`).
             const char *path = message->GetString("path", NULL);
             if (!path || !*path)
                 break;

@@ -6,7 +6,7 @@
 class StepperControl;
 
 // Options -> Inputs/Outputs: sets how many JACK audio capture (in_N) and master
-// output (out_N) ports JackDAW exposes. Runs its own looper thread, so per the
+// output (out_N) ports Kasen exposes. Runs its own looper thread, so per the
 // single-mutator rule it never touches the engine directly: it posts the two
 // counts to the MainWindow messenger, which applies them. Closing hides the
 // window (MainWindow keeps the singleton and re-syncs it on the next open).

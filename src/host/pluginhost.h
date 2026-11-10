@@ -16,7 +16,7 @@ G_BEGIN_DECLS
  * touching RT state from the UI thread.
  */
 
-/* PH_VST2 is appended, never inserted: saved .jdaw projects store the format
+/* PH_VST2 is appended, never inserted: saved .kasen projects store the format
  * as an int, so PH_VST3=0 / PH_LV2=1 must stay fixed. */
 typedef enum { PH_VST3 = 0, PH_LV2, PH_VST2, PH_NFORMATS } PluginFormat;
 
@@ -60,7 +60,7 @@ void pluginhost_shutdown(void);
  * plug-ins' own setup time. */
 void pluginhost_set_block_size(int nframes);
 
-/* `JackDAW --scan-plugin VST3 <path>`: load + describe one plugin bundle in
+/* `Kasen --scan-plugin VST3 <path>`: load + describe one plugin bundle in
  * this throwaway process and print its classes to stdout. Call at the very
  * top of main(); if argv matches, exit with the returned code. Keeps
  * arbitrary third-party binaries out of the main process during catalog
@@ -110,7 +110,7 @@ void pluginhost_process_midi(PluginInstance *inst, const PhMidiEvent *ev, int n_
 
 /* RT processing for an EFFECT that also hears MIDI: the control input, so a
  * footswitch reaches a plug-in's own MIDI features (an amp's channel switching
- * and MIDI learn) as well as JackDAW's MIDI options. In place, like
+ * and MIDI learn) as well as Kasen's MIDI options. In place, like
  * pluginhost_process (wet/dry mix included); with no events it IS
  * pluginhost_process. VST3 gets notes as events and CC / pitch bend / channel
  * pressure / Program Change as parameter changes; VST2 gets effProcessEvents;
@@ -220,7 +220,7 @@ void ph_drum_note_set(PluginInstance *inst, int slot, gint note);
 void ph_drum_learn_arm(PluginInstance *inst, gboolean on);
 gint ph_drum_learn_take_note(PluginInstance *inst);
 
-/* --- Diagnostics (JACKDAW_DIAG) --- */
+/* --- Diagnostics (KASEN_DIAG) --- */
 /* Mark the calling thread as inside/outside the JACK process callback so the
  * host context can detect plug-ins that allocate messages on the RT thread. */
 void ph_rt_mark(int on);

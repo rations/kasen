@@ -1,4 +1,4 @@
-/* pluginhost.cpp — VST3 backend + format dispatch for the jackDAW plugin host.
+/* pluginhost.cpp — VST3 backend + format dispatch for the Kasen plugin host.
  *
  * Port of the Linux JackDAW host (pluginhost.c + pluginhost_vst3.cpp) reduced
  * to the VST3 backend, with every X11/GDK editor path replaced by the native
@@ -85,10 +85,10 @@ static int ph_block = 1024;
  * walk over it are under ph_live_lock (never taken on the RT thread). */
 static GMutex ph_live_lock;
 static GPtrArray *ph_live = NULL; /* PluginInstance*, not owned */
-static GList *ph_cat = NULL; /* PluginInfo* */
+static GList *ph_cat = NULL;      /* PluginInfo* */
 static gboolean ph_scanned = FALSE;
 
-/* ---- Diagnostics (JACKDAW_DIAG) ---- */
+/* ---- Diagnostics (KASEN_DIAG) ---- */
 
 static __thread int ph_rt_in_callback = 0;
 extern "C" void ph_rt_mark(int on)
@@ -620,7 +620,7 @@ static void ph_info_free(gpointer p)
 
 /* ---- Scan ----
  * The main process only ENUMERATES .vst3 bundles and vstplugins files; each is
- * described by a throwaway `JackDAW --scan-plugin <FMT> <path>` helper process,
+ * described by a throwaway `Kasen --scan-plugin <FMT> <path>` helper process,
  * so a module with a crashing static initializer kills the helper, not the DAW.
  * The helper prints one tab-separated "<FMT>\t<name>\t<category>" line per
  * audio-effect class.
@@ -696,7 +696,7 @@ static char *ph_state_path(const char *leaf)
     char base[B_PATH_NAME_LENGTH];
     if (find_directory(B_USER_SETTINGS_DIRECTORY, -1, true, base, sizeof(base)) != B_OK)
         g_strlcpy(base, "/boot/home/config/settings", sizeof(base));
-    gchar *dir = g_build_filename(base, "JackDAW", NULL);
+    gchar *dir = g_build_filename(base, "Kasen", NULL);
     g_mkdir_with_parents(dir, 0700);
     char *out = g_build_filename(dir, leaf, NULL);
     g_free(dir);
@@ -1516,8 +1516,8 @@ static void ph_apply_block(PluginInstance *inst, int nframes)
         }
         g_usleep(500);
     }
-    gboolean ok = inst->format == PH_VST2 ? ph_vst2_set_block(inst, want)
-                                          : ph_vst3_set_block(inst, want);
+    gboolean ok =
+        inst->format == PH_VST2 ? ph_vst2_set_block(inst, want) : ph_vst3_set_block(inst, want);
     /* A refused setup keeps the old length if that is shorter: the plug-in is
      * never handed more than it may have agreed to. */
     if (ok || want < old)
@@ -1944,7 +1944,7 @@ extern "C" gboolean pluginhost_state_load(PluginInstance *inst, const void *data
 
 /* ---- Presets ----
  *
- * A preset file is the same component+controller state blob jackDAW persists per
+ * A preset file is the same component+controller state blob Kasen persists per
  * project (pluginhost_state_save), wrapped so it can be reloaded into a fresh
  * instance of the SAME plugin in ANY project. Layout:
  *   [0]  8  magic "JDPRESET"
@@ -2028,7 +2028,7 @@ extern "C" gboolean pluginhost_preset_load(PluginInstance *inst, const char *pat
     if (len < PH_PRESET_HDR_LEN) {
         g_warning("pluginhost: preset too small");
     } else if (memcmp(p, PH_PRESET_MAGIC, PH_PRESET_MAGIC_LEN) != 0) {
-        g_warning("pluginhost: not a jackDAW preset");
+        g_warning("pluginhost: not a Kasen preset");
     } else {
         guint32 ver;
         memcpy(&ver, p + PH_PRESET_MAGIC_LEN, 4);

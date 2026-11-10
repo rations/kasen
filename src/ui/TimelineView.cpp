@@ -5,12 +5,14 @@
 #include <ScrollBar.h>
 #include <SpaceLayoutItem.h>
 
+#include <math.h>
+
 #include "engine/jackdaw-engine.h"
 #include "RulerView.h"
 #include "TrackAreaView.h"
 
 // Zoom limits (samples per pixel) and defaults.
-static const double kMinSpp = 8.0;
+static const double kMinSpp = 1.0 / 32.0; // 32 px per sample: sample-accurate editing
 static const double kMaxSpp = 262144.0;
 static const double kDefaultSpp = 1000.0; // ~17 s visible in an 800 px lane at 48 kHz
 
@@ -27,7 +29,7 @@ public:
     void ValueChanged(float newValue) override
     {
         BScrollBar::ValueChanged(newValue);
-        m_timeline->SetViewStart((off_t)((double)newValue * m_timeline->Spp()));
+        m_timeline->ScrollBarMoved(newValue);
     }
 
 private:
@@ -112,7 +114,12 @@ void TimelineView::DetachedFromWindow()
 
 off_t TimelineView::XToFrame(float x) const
 {
+    // Zoomed out a pixel spans many frames and truncation picks its first;
+    // zoomed in past one frame per pixel, round so a click on a sample handle
+    // lands on that sample.
     double frame = (double)m_view_start + (double)x * m_spp;
+    if (m_spp < 1.0)
+        frame = floor(frame + 0.5);
     return frame < 0.0 ? 0 : (off_t)frame;
 }
 
@@ -120,6 +127,13 @@ float TimelineView::LaneWidth() const
 {
     float w = Bounds().Width() - kTimelineHeaderWidth;
     return w > 1.0f ? w : 1.0f;
+}
+
+void TimelineView::ScrollBarMoved(float value)
+{
+    if (m_syncing_scroll)
+        return;
+    SetViewStart((off_t)((double)value * m_spp));
 }
 
 void TimelineView::SetViewStart(off_t frame)
@@ -165,6 +179,7 @@ void TimelineView::LocateTo(off_t frame)
 void TimelineView::TickUpdate()
 {
     m_track_area->UpdateMeters();
+    m_track_area->InvalidateLiveTakes();
 
     off_t pos = jackdaw_engine_get_play_pos();
     if (pos == m_last_playhead)
@@ -225,10 +240,17 @@ void TimelineView::UpdateScrollBar()
     float max_px = (float)(content / m_spp - (double)LaneWidth());
     if (max_px < 0)
         max_px = 0;
+    m_syncing_scroll = true;
     m_hscroll->SetRange(0, max_px);
     m_hscroll->SetValue((float)((double)m_view_start / m_spp));
+    m_syncing_scroll = false;
     m_hscroll->SetProportion((float)((double)LaneWidth() / (content / m_spp)));
-    m_hscroll->SetSteps(LaneWidth() * 0.1f, LaneWidth() * 0.9f);
+    // The view starts on whole frames: an arrow step under one frame would
+    // round back to where it was.
+    float small = LaneWidth() * 0.1f;
+    if (small < (float)(1.0 / m_spp))
+        small = (float)(1.0 / m_spp);
+    m_hscroll->SetSteps(small, LaneWidth() * 0.9f);
 }
 
 void TimelineView::UpdateVScrollBar()
