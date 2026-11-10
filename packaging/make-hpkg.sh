@@ -2,9 +2,9 @@
 # make-hpkg.sh — build the `kasen` .hpkg on a running Haiku (x86_64).
 #
 # Prerequisites on the build machine (build these from source first, in order):
-#   - jack-port-haiku  (libjack in /boot/system/non-packaged/lib)
-#   - VST3-haiku       (SDK static libs in ~/VST3-haiku/build/lib/Release)
-# The Makefile's VST3_SDK / VST3_LIB default to ~/VST3-haiku; override if elsewhere.
+#   - jack-port-renku  (libjack in /boot/system/non-packaged/lib)
+#   - VST3-renku       (SDK static libs in ~/VST3-renku/build/lib/Release)
+# The Makefile's VST3_SDK / VST3_LIB default to ~/VST3-renku; override if elsewhere.
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)

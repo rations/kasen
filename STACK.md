@@ -18,10 +18,10 @@ build order and dependencies below still apply.
     (build script, tests)                         - 32-bit Windows code (per-team LDT)
         │                                         - user traps and hardware breakpoints
         ▼                                           delivered to programs (iLok/PACE)
-  jack-port-haiku  ─────────► jack        the JACK2 server + libjack + backends
+  jack-port-renku  ─────────► jack        the JACK2 server + libjack + backends
         │                                  (foundation; everything below is a JACK client)
         ├─► jack-example-tools ─► jack_tools   jack_lsp / jack_connect / jack_transport / ...
-        ├─► jack-graph-haiku   ─► jackgraph    native patchbay + start/stop/settings GUI
+        ├─► jack-graph-renku   ─► jackgraph    native patchbay + start/stop/settings GUI
         │
   VST3-renku ───────────────► vst3_renku       Media Kit VST3 host (vst3host) + example plug-ins
         │  (VST3 SDK, static, MIT) vst3_renku_jack  JACK VST3 host (vst3jackhost), optional
@@ -36,8 +36,8 @@ build order and dependencies below still apply.
         │
   kasen ────────────────────► kasen       the multitrack DAW (hosts VST3 + LV2 + VST2)
 
-  haiku-wine-port ──────────► wine        Wine 11.19 with the Haiku patches
-        └─► vstbridge-haiku ──► vstbridge   Wine bridge: Windows VST2 + VST3
+  renku-wine-port ──────────► wine        Wine 11.19 with the Haiku patches
+        └─► vstbridge-renku ──► vstbridge   Wine bridge: Windows VST2 + VST3
                                             → native Haiku stub add-ons the DAW loads
 ```
 
@@ -48,9 +48,9 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | Package | Version (0.5) | Repo | Role | License |
 |---|---|---|---|---|
 | `haiku`, `haiku_devel` | r1~beta6_hrev60256-3 | [rations/haiku](https://github.com/rations/haiku) branch `jackdaw-stack-0.5-hrev60256`, built with [haiku-kernel-usb](https://github.com/rations/haiku-kernel-usb) | Haiku with the USB-audio driver and the kernel support Wine needs | MIT (Haiku) |
-| `jack` | 1.9.23-7 | [jack-port-haiku](https://github.com/rations/jack-port-haiku) | JACK2 server, libjack, audio/MIDI backends | GPL v2 / LGPL v2.1 |
+| `jack` | 1.9.23-7 | [jack-port-renku](https://github.com/rations/jack-port-renku) | JACK2 server, libjack, audio/MIDI backends | GPL v2 / LGPL v2.1 |
 | `jack_tools` | 4-2 | [jack-example-tools](https://github.com/rations/jack-example-tools) | standard JACK CLI utilities | GPL v2 |
-| `jackgraph` | 0.2-1 | [jack-graph-haiku](https://github.com/rations/jack-graph-haiku) | native patchbay + server control GUI | MIT |
+| `jackgraph` | 0.2-1 | [jack-graph-renku](https://github.com/rations/jack-graph-renku) | native patchbay + server control GUI | MIT |
 | `vst3_renku` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | Media Kit VST3 host (`vst3host`) + example plug-ins (+ the SDK); replaces `vst3_haiku` | MIT |
 | `vst3_renku_jack` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | JACK VST3 host (`vst3jackhost`), optional | MIT |
 | `lv2_renku` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | LV2 stack + spec bundles + Media Kit LV2 hosts (`lv2host`, `lv2guihost`; JACK through an add-on) + tools; replaces `lv2_haiku` | ISC |
@@ -58,8 +58,8 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | `drumku` | 0.4.0-1 | [DRUMku](https://github.com/rations/DRUMku) | MIDI drum-sampler VST3 | MIT |
 | `rktuner` | 0.5.0-1 | [rktuner](https://github.com/rations/rktuner) | chromatic tuner app + LV2 plug-in; replaces `hktuner` | MIT |
 | `kasen` | 0.7.0-1 | [kasen](https://github.com/rations/kasen) | the DAW (formerly `jackdaw`) | MIT |
-| `wine` | 11.19-4 | [haiku-wine-port-jackdaw](https://github.com/rations/haiku-wine-port-jackdaw) | Wine with the Haiku patches (required by `vstbridge`) | LGPL v2.1 |
-| `vstbridge` | 0.2.0-1 | [vstbridge-haiku](https://github.com/rations/vstbridge-haiku) | Wine bridge for Windows VST2/VST3 → native stubs | GPL v3 (yabridge fork) |
+| `wine` | 11.19-4 | [renku-wine-port-jackdaw](https://github.com/rations/renku-wine-port-jackdaw) | Wine with the Haiku patches (required by `vstbridge`) | LGPL v2.1 |
+| `vstbridge` | 0.2.0-1 | [vstbridge-renku](https://github.com/rations/vstbridge-renku) | Wine bridge for Windows VST2/VST3 → native stubs | GPL v3 (yabridge fork) |
 
 ## The system package
 
@@ -93,7 +93,7 @@ sh haiku-kernel-usb/dist/build-system-package.sh ~/haiku
 ```
 
 `haiku-kernel-usb/tests/wow64_ldt_test.c` tests the kernel side. The Windows-side tests are in
-`haiku-wine-port/tests`. **Moving to a newer nightly** means rebasing the release branch onto
+`renku-wine-port/tests`. **Moving to a newer nightly** means rebasing the release branch onto
 the new `hrev` tag, rebuilding the two packages there, and running both test sets.
 
 Only Wine, among the other packages, needs this system package, and only for 32-bit programs
@@ -145,7 +145,7 @@ plug-ins to a working install, and nothing else links against it.
 - **Wine must be this stack's build.** `wine` is a hard dependency, and each bridged plug-in
   runs in a Wine host process (`vstbridge-host.exe`). The bridge host is a C++ Winelib module,
   and only the patched Wine runs its static initialisers; the patches also cover the iLok
-  installers, PACE and 32-bit code. The recipe and patchset are in `haiku-wine-port`.
+  installers, PACE and 32-bit code. The recipe and patchset are in `renku-wine-port`.
 - **Two front-ends, same job.** `VSTBridge` is a native Interface Kit application in
   *Deskbar → Applications*, and `vstbridgectl` is the equivalent CLI. Either one scans the
   Windows plug-in directories you configure and syncs one native stub add-on per plug-in into
@@ -175,17 +175,17 @@ a `build-from-source.sh` that installs into `/boot/system/non-packaged` instead.
 order follows the dependencies:
 
 ```
-jack-port-haiku      # libjack
+jack-port-renku      # libjack
 jack-example-tools   # needs jack
-jack-graph-haiku     # needs jack
+jack-graph-renku     # needs jack
 VST3-renku           # SDK static libs + vst3host (+ vst3jackhost if jack is installed)
 LV2-renku            # lilv/serd/sord/sratom/zix static + spec bundles + lv2host/lv2guihost
 NAMku                # needs the VST3-renku SDK
 DRUMku               # needs the VST3-renku SDK
 rktuner              # needs the LV2-renku stage (headers, liblv2host, libjdbackend)
 kasen                # needs the VST3-renku SDK + the LV2-renku stack (jack optional)
-haiku-wine-port      # wine, built with haikuporter (about an hour)
-vstbridge-haiku      # needs wine (winegcc) + meson/ninja, vendors its own SDK
+renku-wine-port      # wine, built with haikuporter (about an hour)
+vstbridge-renku      # needs wine (winegcc) + meson/ninja, vendors its own SDK
 ```
 
 The system package is built separately, as above. `haikuporter` bakes the build machine's

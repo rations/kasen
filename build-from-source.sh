@@ -2,9 +2,9 @@
 # build-from-source.sh — build and install Kasen from source on Haiku.
 #
 # Build these from source FIRST, in order (each has its own build-from-source.sh):
-#   1. jack-port-haiku   (libjack)
-#   2. VST3-haiku        (SDK static libs at ~/VST3-haiku/build/lib/Release)
-# The Makefile's VST3_SDK / VST3_LIB default to ~/VST3-haiku.
+#   1. jack-port-renku   (libjack)
+#   2. VST3-renku        (SDK static libs at ~/VST3-renku/build/lib/Release)
+# The Makefile's VST3_SDK / VST3_LIB default to ~/VST3-renku.
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)

@@ -1,7 +1,7 @@
 # HaikuPorts recipe for Kasen (native multitrack JACK DAW).
 #
 # NOT YET VALIDATED with haikuporter. This is the most involved recipe: Kasen builds
-# against BOTH libjack (from the jack package) and the VST3-haiku SDK static libs, so
+# against BOTH libjack (from the jack package) and the VST3-renku SDK static libs, so
 # BUILD() first builds the SDK libs from the second source, then Kasen. On the target:
 #   1. Pin SOURCE_URI / SOURCE_URI_2 to tags/commits with checksums.
 #   2. Confirm the $sourceDir2 layout and the VST3_LIB path after the SDK build with
@@ -16,9 +16,9 @@ LICENSE="MIT"
 REVISION="1"
 SOURCE_URI="git+https://github.com/rations/kasen#master"
 SOURCE_DIR="kasen"
-# Second source: the VST3-haiku SDK Kasen builds and links against.
+# Second source: the VST3-renku SDK Kasen builds and links against.
 SOURCE_URI_2="git+https://github.com/rations/VST3-renku#master"
-SOURCE_DIR_2="VST3-haiku"
+SOURCE_DIR_2="VST3-renku"
 ARCHITECTURES="x86_64"
 
 PROVIDES="
@@ -46,7 +46,7 @@ BUILD_REQUIRES="
 
 BUILD()
 {
-	# Build the VST3-haiku SDK static libs from the second source first.
+	# Build the VST3-renku SDK static libs from the second source first.
 	cmake -B "$sourceDir2/build" -S "$sourceDir2" -G Ninja \
 		-DCMAKE_BUILD_TYPE=Release -DNAMKU_DIR=/nonexistent
 	ninja -C "$sourceDir2/build"

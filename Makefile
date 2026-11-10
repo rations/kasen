@@ -1,15 +1,15 @@
 # Builds on Haiku only (uses the non-packaged JACK install and glib2 from pkgman).
 # Engine/model code is C (gnu99, glib2 — no GTK); UI code is C++ (Interface Kit).
-# VST3 hosting builds against the sibling VST3-haiku checkout (Haiku-patched
+# VST3 hosting builds against the sibling VST3-renku checkout (Haiku-patched
 # Steinberg SDK sources + its cmake-built static libs); LV2 hosting builds
-# against the sibling LV2-haiku checkout (lilv/zix/serd/sord/sratom built as
+# against the sibling LV2-renku checkout (lilv/zix/serd/sord/sratom built as
 # static libs into its build/stage prefix).
 CC  = gcc
 CXX = g++
 NONPACKAGED = /boot/system/non-packaged
-VST3_SDK ?= $(HOME)/VST3-haiku/vst3sdk
-VST3_LIB ?= $(HOME)/VST3-haiku/build/lib/Release
-LV2_STAGE ?= $(HOME)/LV2-haiku/build/stage
+VST3_SDK ?= $(HOME)/VST3-renku/vst3sdk
+VST3_LIB ?= $(HOME)/VST3-renku/build/lib/Release
+LV2_STAGE ?= $(HOME)/LV2-renku/build/stage
 LV2_PC     = PKG_CONFIG_PATH=$(LV2_STAGE)/lib/pkgconfig pkg-config
 LV2_CFLAGS := $(shell $(LV2_PC) --cflags lilv-0 zix-0 lv2)
 LV2_LIBS   := $(shell $(LV2_PC) --static --libs lilv-0 zix-0)
@@ -53,7 +53,7 @@ CXX_SOURCES = src/ui/main.cpp src/ui/JackDawApp.cpp src/ui/MainWindow.cpp \
 HOST_SOURCES = src/host/pluginhost.cpp src/host/pluginhost_lv2.cpp src/host/pluginhost_vst2.cpp
 
 # SDK sources compiled directly (they are not part of the SDK's static libs;
-# same set the VST3-haiku hosts compile): the Haiku module loader, the
+# same set the VST3-renku hosts compile): the Haiku module loader, the
 # component/controller provider, and the IBStream-on-memory used for state.
 SDK_OBJECTS = src/host/sdk_module_haiku.o src/host/sdk_plugprovider.o \
               src/host/sdk_memorystream.o
