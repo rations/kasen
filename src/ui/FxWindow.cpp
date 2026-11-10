@@ -132,7 +132,7 @@ enum {
     MSG_DRUM_ADD = 'dkad',       // +Add slot
     MSG_DRUM_POLL = 'dkpl',      // periodic poll for the captured learn note
 
-    // Presets (generic to every plugin): full state ⇄ a .jdpreset file.
+    // Presets (generic to every plugin): full state ⇄ a .kasenpreset file.
     MSG_PRESET_SAVE = 'psav',      // "Save preset…" clicked → show B_SAVE_PANEL
     MSG_PRESET_LOAD = 'plod',      // "Load preset…" clicked → show B_OPEN_PANEL
     MSG_PRESET_SAVE_REFS = 'psrf', // save panel result: entry_ref "directory" + "name"
@@ -948,9 +948,9 @@ void FxWindow::MessageReceived(BMessage *message)
             m_save_panel->SetTarget(BMessenger(this));
             m_save_panel->SetMessage(&tmpl);
             char def[256];
-            snprintf(def, sizeof(def), "%s.jdpreset", pluginhost_name(inst));
+            snprintf(def, sizeof(def), "%s.kasenpreset", pluginhost_name(inst));
             m_save_panel->SetSaveText(def);
-            m_save_panel->Window()->SetTitle("Save preset (.jdpreset)");
+            m_save_panel->Window()->SetTitle("Save preset (.kasenpreset)");
             m_save_panel->Show();
             break;
         }
@@ -964,7 +964,7 @@ void FxWindow::MessageReceived(BMessage *message)
             BMessage tmpl(MSG_PRESET_LOAD_REFS);
             m_file_panel->SetTarget(BMessenger(this));
             m_file_panel->SetMessage(&tmpl);
-            m_file_panel->Window()->SetTitle("Load preset (.jdpreset)");
+            m_file_panel->Window()->SetTitle("Load preset (.kasenpreset)");
             m_file_panel->Show();
             break;
         }

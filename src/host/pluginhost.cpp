@@ -1952,7 +1952,10 @@ extern "C" gboolean pluginhost_state_load(PluginInstance *inst, const void *data
  *   [12] 16 VST3 class CID (must match the target plugin)
  *   [28] .. state blob from pluginhost_state_save
  * Generic to every hosted plugin; for DRUMku the blob is the whole kit (slot count
- * + per-slot path/note/volume), and load re-reads the .wav files via setState. */
+ * + per-slot path/note/volume), and load re-reads the .wav files via setState.
+ * The files are named *.kasenpreset. The NAMku and DRUMku standalone apps read
+ * and write the same format with their own code (standalone/pluginhost.cpp in
+ * those repositories), so a change here has to be made there too. */
 
 #define PH_PRESET_MAGIC "JDPRESET"
 #define PH_PRESET_MAGIC_LEN 8

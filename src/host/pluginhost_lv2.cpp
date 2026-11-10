@@ -1389,7 +1389,7 @@ extern "C" gboolean ph_lv2_param_is_stepped(PluginInstance *inst, guint i, gint 
 }
 
 /* ---- State (LV2 state extension via lilv; the blob stored in the .kasen /
- * .jdpreset is the Turtle serialization string) ---- */
+ * .kasenpreset is the Turtle serialization string) ---- */
 
 static const void *lph_get_port_value(const char *sym, void *user_data, uint32_t *size,
                                       uint32_t *type)

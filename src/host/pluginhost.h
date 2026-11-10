@@ -136,7 +136,7 @@ void pluginhost_reset(PluginInstance *inst);
 gboolean pluginhost_state_save(PluginInstance *inst, void **out, gsize *out_len);
 gboolean pluginhost_state_load(PluginInstance *inst, const void *data, gsize len);
 
-/* Presets: write/read this plugin's full state to a .jdpreset file (state blob
+/* Presets: write/read this plugin's full state to a .kasenpreset file (state blob
  * wrapped with magic + version + the plugin's VST3 class UID). Load rejects a
  * file whose UID doesn't match this plugin. Main-thread only. */
 gboolean pluginhost_preset_save(PluginInstance *inst, const char *path);
