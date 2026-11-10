@@ -3,8 +3,7 @@
 Kasen (歌仙, said "kah-sen", after the 36-verse form of renku poetry) is a native
 [RenkuOS](https://github.com/RenkuOS) multitrack digital audio workstation built on the
 Interface Kit. It plays and records through the RenkuOS media services (Media Kit, MIDI
-Kit), or as a JACK client. It began as a port of JackDAW, a Linux GTK DAW, and is now
-developed for RenkuOS.
+Kit), or as a JACK client.
 
 ## Features
 
@@ -20,7 +19,11 @@ developed for RenkuOS.
 
 ## Install
 
-There is no Kasen release yet; build it from source (below).
+Built packages are on the [Releases](https://github.com/rations/kasen/releases) page:
+`pkgman install ./kasen-<version>-x86_64.hpkg`. Kasen needs `lv2_renku` from
+[LV2-renku](https://github.com/rations/LV2-renku);
+[renku-audio](https://github.com/rations/renku-audio) lists the whole audio stack. Or build
+it from source (below).
 
 ## Requirements
 
@@ -35,14 +38,14 @@ There is no Kasen release yet; build it from source (below).
   `media/LV2` and `media/vstplugins` directories, so the `namku`, `drumku` and `rktuner`
   packages need no extra configuration.
 - Wine and vstbridge (for Windows plug-ins) have to be built on RenkuOS (see
-  [renku-wine-port-jackdaw](https://github.com/rations/renku-wine-port-jackdaw)); they run
+  [renku-wine-port](https://github.com/rations/renku-wine-port)); they run
   64-bit Windows plug-ins. 32-bit Windows programs and iLok-protected plug-ins need kernel
   support that RenkuOS does not have.
 
 ## Building
 
-Native on RenkuOS (x86_64), after jack-port-renku, VST3-renku and LV2-renku (see STACK.md for
-the order):
+Native on RenkuOS (x86_64), after jack-port-renku, VST3-renku and LV2-renku (see
+[renku-audio](https://github.com/rations/renku-audio) for the order):
 - `packaging/make-hpkg.sh` builds the package; the version comes from `VERSION`.
 - `./build-from-source.sh` builds and installs into `/boot/system/non-packaged`.
 
