@@ -10,7 +10,7 @@ offline/realtime render. Plug-in editors are embedded natively in the FX window 
 plug-in provides one. Runs on the RenkuOS media services (Media Kit, routed in Cortex,
 MIDI in PatchBay) by default, or as a JACK client when the jack package is installed:
 choose in Options > Audio System. VST3 plug-ins such as NAMku and DRUMku are picked up
-from the system and user add-ons/media/VST3 directories, and LV2 plug-ins such as hktuner
+from the system and user add-ons/media/VST3 directories, and LV2 plug-ins such as rktuner
 from add-ons/media/LV2."
 packager		"rations <ehqcar@proton.me>"
 vendor			"rations"

@@ -10,7 +10,7 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 VERSION=$(cat "$ROOT/VERSION")   # the only place the version lives
-REVISION=1                       # bump for a rebuild of the same VERSION
+REVISION=2                       # bump for a rebuild of the same VERSION
 STAGE="$HERE/stage"
 
 # The system this is built on is the oldest the package may run on (as
