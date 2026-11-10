@@ -32,7 +32,7 @@ There is no Kasen release yet; build it from source (below).
   jackd -X haikumidi -d hmulti -d /dev/audio/hmulti/usb/1 -r 48000 -p 256 -n 3
   ```
 - VST3, LV2 and VST2 plug-ins are picked up from the system and user `add-ons/media/VST3`,
-  `media/LV2` and `media/vstplugins` directories, so the `namku`, `drumku` and `hktuner`
+  `media/LV2` and `media/vstplugins` directories, so the `namku`, `drumku` and `rktuner`
   packages need no extra configuration.
 - Wine and vstbridge (for Windows plug-ins) have to be built on RenkuOS (see
   [renku-wine-port-jackdaw](https://github.com/rations/renku-wine-port-jackdaw)); they run

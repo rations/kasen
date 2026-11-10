@@ -30,9 +30,9 @@ build order and dependencies below still apply.
         ├─► DRUMku ───────────► drumku      MIDI drum-sampler VST3 instrument
         │
   LV2-renku ────────────────► lv2_renku   LV2 stack (lilv/serd/sord/sratom/zix,
-        │  (static libs, MIT/ISC)           spec bundles) + tools
-        │                     └──► lv2_renku_jack  JACK LV2 host (optional)
-        ├─► hktuner ─────────► hktuner      chromatic tuner LV2 (native GUI)
+        │  (static libs, MIT/ISC)           spec bundles) + Media Kit LV2 hosts
+        │                                   (lv2host, lv2guihost; JACK via add-on) + tools
+        ├─► rktuner ─────────► rktuner      chromatic tuner app + LV2 plug-in (native GUI)
         │
   kasen ────────────────────► kasen       the multitrack DAW (hosts VST3 + LV2 + VST2)
 
@@ -53,11 +53,10 @@ linked statically, but lilv needs the LV2 **specification bundles** it installs 
 | `jackgraph` | 0.2-1 | [jack-graph-haiku](https://github.com/rations/jack-graph-haiku) | native patchbay + server control GUI | MIT |
 | `vst3_renku` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | Media Kit VST3 host (`vst3host`) + example plug-ins (+ the SDK); replaces `vst3_haiku` | MIT |
 | `vst3_renku_jack` | 0.4.0-1 | [VST3-renku](https://github.com/rations/VST3-renku) | JACK VST3 host (`vst3jackhost`), optional | MIT |
-| `lv2_renku` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | LV2 stack + spec bundles + tools; replaces `lv2_haiku` | ISC |
-| `lv2_renku_jack` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | JACK LV2 host (`lv2jackhost`), optional | ISC |
+| `lv2_renku` | 0.4.0-1 | [LV2-renku](https://github.com/rations/LV2-renku) | LV2 stack + spec bundles + Media Kit LV2 hosts (`lv2host`, `lv2guihost`; JACK through an add-on) + tools; replaces `lv2_haiku` | ISC |
 | `namku` | 0.4.0-1 | [NAMku](https://github.com/rations/NAMku) | Neural Amp Modeler VST3 | MIT (+ MPL 2.0, Eigen) |
 | `drumku` | 0.4.0-1 | [DRUMku](https://github.com/rations/DRUMku) | MIDI drum-sampler VST3 | MIT |
-| `hktuner` | 0.4.0-1 | [hktuner](https://github.com/rations/hktuner) | chromatic tuner LV2 plug-in | MIT |
+| `rktuner` | 0.5.0-1 | [rktuner](https://github.com/rations/rktuner) | chromatic tuner app + LV2 plug-in; replaces `hktuner` | MIT |
 | `kasen` | 0.7.0-1 | [kasen](https://github.com/rations/kasen) | the DAW (formerly `jackdaw`) | MIT |
 | `wine` | 11.19-4 | [haiku-wine-port-jackdaw](https://github.com/rations/haiku-wine-port-jackdaw) | Wine with the Haiku patches (required by `vstbridge`) | LGPL v2.1 |
 | `vstbridge` | 0.2.0-1 | [vstbridge-haiku](https://github.com/rations/vstbridge-haiku) | Wine bridge for Windows VST2/VST3 → native stubs | GPL v3 (yabridge fork) |
@@ -180,11 +179,11 @@ jack-port-haiku      # libjack
 jack-example-tools   # needs jack
 jack-graph-haiku     # needs jack
 VST3-renku           # SDK static libs + vst3host (+ vst3jackhost if jack is installed)
-LV2-haiku            # lilv/serd/sord/sratom/zix static + spec bundles + lv2jackhost
-NAMku                # needs the VST3-haiku SDK
-DRUMku               # needs the VST3-haiku SDK
-hktuner              # needs the LV2-haiku staged headers
-kasen                # needs jack + the VST3-haiku SDK + the LV2-haiku stack
+LV2-renku            # lilv/serd/sord/sratom/zix static + spec bundles + lv2host/lv2guihost
+NAMku                # needs the VST3-renku SDK
+DRUMku               # needs the VST3-renku SDK
+rktuner              # needs the LV2-renku stage (headers, liblv2host, libjdbackend)
+kasen                # needs the VST3-renku SDK + the LV2-renku stack (jack optional)
 haiku-wine-port      # wine, built with haikuporter (about an hour)
 vstbridge-haiku      # needs wine (winegcc) + meson/ninja, vendors its own SDK
 ```
