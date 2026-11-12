@@ -168,10 +168,11 @@ void pluginhost_param_display(PluginInstance *inst, guint i, char *buf, int bufl
  * cycling control rather than a slider. *steps = number of steps (>= 1). */
 gboolean pluginhost_param_is_stepped(PluginInstance *inst, guint i, gint *steps);
 
-/* Native plugin editor. If the plugin ships an editor the host can embed (an
- * LV2 HaikuUI — its LV2UI_Widget is a BView*; VST3 has no Haiku IPlugView
- * platform type yet), ui_create returns that BView* as a void* for the FX
- * window to AddChild() in place of the generic slider panel; otherwise NULL.
+/* Plugin editor. If the plugin ships an editor the host can embed (an LV2
+ * HaikuUI, whose LV2UI_Widget is a BView*; a VST3 IPlugView that supports
+ * kPlatformTypeHaikuBView; a VST2 editor, given a BView* in effEditOpen),
+ * ui_create returns that BView* as a void* for the FX window to AddChild() in
+ * place of the generic slider panel; otherwise NULL.
  * Created once per instance (repeat calls return the same view). The view
  * runs on the caller's window looper from then on; call ui_poll ~30 Hz and
  * ui_destroy from that looper with it locked. ui_destroy detaches and deletes
